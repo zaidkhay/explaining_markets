@@ -60,7 +60,7 @@ seen_webhooks = modal.Dict.from_name("em-webhook-dedupe", create_if_missing=True
 
 # Credentials are read from your local .env at deploy time (see .env.example).
 # Prefer Modal's secret store instead? See docs/advanced.md.
-secrets = [modal.Secret.from_dotenv(__file__)]
+secrets = [modal.Secret.from_dotenv(".env")]
 
 
 def _claim(webhook_id):
