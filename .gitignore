@@ -24,3 +24,7 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+
+# Ignored md files
+HISTORICAL_DATA_INVESTIGATION.md
+
