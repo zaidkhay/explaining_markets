@@ -19,13 +19,32 @@ dependencies = [
 dev = [
     "pytest>=8.3",
 ]
+# Offline quantitative research only (feature_store.py / experiment.py /
+# backtest.py). NOT read by modal_app.py's deploy image — that image's
+# dependency list is the explicit `pip_install(...)` call in modal_app.py,
+# so adding research-only packages here has zero effect on what gets
+# deployed to the live webhook.
+research = [
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+]
 
-# Mirror of the dev group for pip users (`pip install -e ".[dev]"`) — plain pip
-# doesn't read [dependency-groups]. Keep the two lists in sync.
+# Mirror of the dev/research groups for pip users (`pip install -e ".[dev,research]"`)
+# — plain pip doesn't read [dependency-groups]. Keep the lists in sync.
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
 ]
+research = [
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+]
+
+[tool.uv]
+# `uv run` / `uv sync` include these by default so `uv run pytest` picks up
+# the research-only tests without an extra `--group research` flag. Deploy
+# is unaffected — see the comment on the `research` group above.
+default-groups = ["dev", "research"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
