@@ -1,0 +1,153 @@
+{
+  "examples": [
+    {
+      "event_id": "ea_OTIS_Q1_2026",
+      "fls_ratio": 0.4,
+      "guidance_direction": -1.0,
+      "other_fls_ratio": 0.1,
+      "prediction": 0.2771573803241595,
+      "quant_earnings_fls_ratio": 0.3,
+      "quarter": "2026Q2",
+      "signed_forward_tone": -0.5,
+      "ticker": "OTIS"
+    },
+    {
+      "event_id": "ea_WT_Q4_2025",
+      "fls_ratio": 0.0,
+      "guidance_direction": 0.0,
+      "other_fls_ratio": 0.0,
+      "prediction": 0.49461262867747563,
+      "quant_earnings_fls_ratio": 0.0,
+      "quarter": "2026Q1",
+      "signed_forward_tone": 0.0,
+      "ticker": "WT"
+    },
+    {
+      "event_id": "ea_MOD_Q3_2026",
+      "fls_ratio": 0.7,
+      "guidance_direction": 1.0,
+      "other_fls_ratio": 0.6,
+      "prediction": 0.6586919704983825,
+      "quant_earnings_fls_ratio": 0.1,
+      "quarter": "2026Q1",
+      "signed_forward_tone": 0.7142857142857143,
+      "ticker": "MOD"
+    }
+  ],
+  "feature_names": [
+    "fls_count",
+    "fls_ratio",
+    "earnings_fls_count",
+    "earnings_fls_ratio",
+    "non_earnings_fls_count",
+    "non_earnings_fls_ratio",
+    "quantitative_fls_count",
+    "quantitative_fls_ratio",
+    "non_quantitative_fls_count",
+    "non_quantitative_fls_ratio",
+    "quant_earnings_fls_count",
+    "quant_earnings_fls_ratio",
+    "other_fls_count",
+    "other_fls_ratio",
+    "quant_non_earnings_ratio",
+    "nonquant_earnings_ratio",
+    "other_to_quant_earnings_ratio",
+    "positive_forward_count",
+    "negative_forward_count",
+    "signed_forward_tone",
+    "guidance_raised",
+    "guidance_lowered",
+    "guidance_maintained",
+    "guidance_direction",
+    "signed_fls_intensity",
+    "signed_quant_earnings_intensity",
+    "signed_other_fls_intensity",
+    "guidance_fls_interaction",
+    "guidance_quant_earnings_interaction",
+    "other_minus_quant_earnings"
+  ],
+  "locked_holdout": {
+    "constant_0.5": {
+      "mae": 0.2501221299462628,
+      "n_obs": 2047,
+      "pearson": null,
+      "prediction_std": 0.0,
+      "rmse": 0.2888161918656265,
+      "spearman": null
+    },
+    "fls_ridge": {
+      "mae": 0.24517809360372322,
+      "n_obs": 2047,
+      "pearson": 0.16698041992356472,
+      "prediction_std": 0.05826399237462499,
+      "rmse": 0.2849384492708888,
+      "spearman": 0.14459445284279512
+    },
+    "fls_ridge_official": {
+      "delta_r_squared": 0.020449069218995142,
+      "n_obs": 1989,
+      "r_squared_prediction_plus_surprise": 0.08973226707960136,
+      "r_squared_surprise": 0.06928319786060622
+    },
+    "heuristic_fact": {
+      "mae": 0.2782163822698358,
+      "n_obs": 2047,
+      "pearson": 0.15709950799739236,
+      "prediction_std": 0.2074089976340197,
+      "rmse": 0.34007276376687456,
+      "spearman": 0.1553318080609003
+    },
+    "surprise_benchmark": {
+      "mae": 0.26942693681742785,
+      "n_obs": 1989,
+      "pearson": 0.26321701666230907,
+      "prediction_std": 0.2888105546718027,
+      "rmse": 0.3510092061132884,
+      "spearman": 0.26337940131364795
+    }
+  },
+  "modal_deploy_status": "not_configured",
+  "selected_alpha": 10.0,
+  "tests_passed": 132,
+  "training_timestamp": "2026-08-12T04:31:32.586968+00:00",
+  "validation": {
+    "constant_0.5": {
+      "mae": 0.25010464629552115,
+      "n_obs": 2390,
+      "pearson": null,
+      "prediction_std": 0.0,
+      "rmse": 0.28879594438581,
+      "spearman": null
+    },
+    "fls_ridge": {
+      "mae": 0.24831012329118538,
+      "n_obs": 2390,
+      "pearson": 0.09931718739436728,
+      "prediction_std": 0.04378868471998511,
+      "rmse": 0.2878860744563841,
+      "spearman": 0.0845139575266149
+    },
+    "fls_ridge_official": {
+      "delta_r_squared": 0.007527656856330944,
+      "n_obs": 2307,
+      "r_squared_prediction_plus_surprise": 0.06534858572200297,
+      "r_squared_surprise": 0.05782092886567203
+    },
+    "heuristic_fact": {
+      "mae": 0.26709268947109394,
+      "n_obs": 2390,
+      "pearson": 0.09388017003099125,
+      "prediction_std": 0.16649045325383358,
+      "rmse": 0.3240683097189033,
+      "spearman": 0.09959047967327285
+    },
+    "surprise_benchmark": {
+      "mae": 0.275802193142716,
+      "n_obs": 2307,
+      "pearson": 0.24045982796648566,
+      "prediction_std": 0.2887892234033724,
+      "rmse": 0.3556852251786807,
+      "spearman": 0.2404856169918168
+    }
+  }
+}
