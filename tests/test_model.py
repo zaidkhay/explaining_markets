@@ -1,12 +1,12 @@
-"""Model interface: deterministic baseline, transparent heuristic, and bounds."""
+"""Model interface: baseline/heuristic fallbacks and trained FLS default."""
 
 from __future__ import annotations
 
 from explaining_markets.features import FeatureVector
 from explaining_markets.model import (
     BaselineModel,
+    ForwardLookingRidgeModel,
     HeuristicFactModel,
-    PercentileModel,
     get_default_model,
 )
 
@@ -35,24 +35,21 @@ def test_baseline_model_always_returns_half() -> None:
 
 def test_baseline_model_fit_is_a_noop() -> None:
     model = BaselineModel()
-    model.fit([(_features(3), 0.9)])  # must not raise
-    assert model.predict_percentile(_features(3)) == 0.5  # unaffected by "fit"
+    model.fit([(_features(3), 0.9)])
+    assert model.predict_percentile(_features(3)) == 0.5
 
 
 def test_heuristic_model_neutral_sentiment_is_half() -> None:
-    model = HeuristicFactModel()
-    assert model.predict_percentile(_features(0)) == 0.5
+    assert HeuristicFactModel().predict_percentile(_features(0)) == 0.5
 
 
 def test_heuristic_model_positive_sentiment_raises_percentile() -> None:
-    model = HeuristicFactModel()
-    p = model.predict_percentile(_features(3))
+    p = HeuristicFactModel().predict_percentile(_features(3))
     assert 0.5 < p <= 0.90
 
 
 def test_heuristic_model_negative_sentiment_lowers_percentile() -> None:
-    model = HeuristicFactModel()
-    p = model.predict_percentile(_features(-3))
+    p = HeuristicFactModel().predict_percentile(_features(-3))
     assert 0.10 <= p < 0.5
 
 
@@ -70,17 +67,18 @@ def test_heuristic_model_never_exceeds_bounds_even_for_extreme_input() -> None:
 
 def test_heuristic_model_fit_is_a_noop() -> None:
     model = HeuristicFactModel()
-    model.fit([(_features(3), 0.9)])  # rule-based; must not raise or change behavior
+    model.fit([(_features(3), 0.9)])
     assert model.predict_percentile(_features(0)) == 0.5
 
 
-def test_get_default_model_returns_heuristic_model_satisfying_protocol() -> None:
+def test_get_default_model_returns_trained_fls_ridge() -> None:
     model = get_default_model()
-    assert isinstance(model, HeuristicFactModel)
-    assert isinstance(model, PercentileModel)
+    assert isinstance(model, ForwardLookingRidgeModel)
+    assert model.model_version == "fls_ridge_v1"
 
 
-def test_get_default_model_never_raises_and_needs_no_arguments() -> None:
-    # Structural guard for the "must still run with no historical data" requirement.
+def test_get_default_model_needs_no_arguments_and_predicts_finite_percentile() -> None:
     model = get_default_model()
-    assert 0.0 <= model.predict_percentile(_features(0)) <= 1.0
+    assert isinstance(model, ForwardLookingRidgeModel)
+    p = model.predict_disclosure(["We expect revenue growth of 12% and stronger demand."])
+    assert 0.0 <= p <= 1.0

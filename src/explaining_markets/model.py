@@ -1,101 +1,114 @@
-"""Replaceable percentile-prediction model interface.
-
-:class:`PercentileModel` is the contract ``predict.py`` and ``backtest.py``
-both code against. :class:`BaselineModel` is the deterministic,
-always-available fallback (no data, no training, no external dependencies).
-:class:`HeuristicFactModel` is the MVP's actual strategy — a small, fully
-transparent, rule-based mapping from a
-:class:`~explaining_markets.features.FeatureVector` to a percentile,
-documented well enough that a human can hand-verify any prediction it makes.
-
-Swapping in a trained model later means writing a new class that implements
-``predict_percentile`` (and optionally ``fit``) — nothing else in the
-pipeline (``predict.py``, ``backtest.py``) needs to change; only
-:func:`get_default_model` needs to point at the new class.
-"""
+"""Production percentile models and fail-safe default-model selection."""
 
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from explaining_markets.features import FeatureVector
+from explaining_markets.forward_looking_features import (
+    MODEL_FEATURE_NAMES,
+    ForwardLookingFeatures,
+    extract_forward_looking_features,
+)
 
-# Calibration discipline mirrored from the starter's original LLM-based
-# strategy: reserve the extremes for strong, unambiguous signal, and default
-# toward the middle otherwise. Neither bound is reachable by construction —
-# see HeuristicFactModel's docstring for the exact formula.
-_MIN_PERCENTILE = 0.10
-_MAX_PERCENTILE = 0.90
-_SENTIMENT_SCALE = 4.0  # net_sentiment hits needed to approach the bounds
+DEFAULT_ARTIFACT_PATH = Path(__file__).with_name("artifacts") / "fls_ridge_v1.json"
 
 
 @runtime_checkable
 class PercentileModel(Protocol):
-    """Contract every prediction strategy must satisfy."""
-
-    def predict_percentile(self, features: FeatureVector) -> float:
-        """Return a predicted CAR1 percentile in ``[0, 1]`` for one ``(event, ticker)``."""
-        ...
-
-    def fit(self, training_rows: list[tuple[FeatureVector, float]]) -> None:
-        """Optionally fit on historical ``(features, realized_percentile)`` pairs.
-
-        The MVP models below no-op here (they are not trained); a future
-        model can override this without changing any caller.
-        """
-        ...
+    def predict_percentile(self, features: FeatureVector) -> float: ...
+    def fit(self, rows) -> "PercentileModel": ...
 
 
 class BaselineModel:
-    """Deterministic 0.5 baseline. Always available; no inputs required.
+    def fit(self, rows):
+        return self
 
-    This is the fallback ``predict.py`` and ``get_default_model`` use
-    whenever nothing better is available — matching the starter's original
-    "round-trip works without burning credits" behavior, but as a first-class,
-    independently testable component.
-    """
-
-    def predict_percentile(self, features: FeatureVector) -> float:  # noqa: ARG002
+    def predict_percentile(self, features: FeatureVector) -> float:
         return 0.5
-
-    def fit(self, training_rows: list[tuple[FeatureVector, float]]) -> None:  # noqa: ARG002
-        return None
 
 
 class HeuristicFactModel:
-    """MVP strategy: a transparent, rule-based mapping from fact sentiment to percentile.
+    """Existing transparent disclosure heuristic, retained as production fallback."""
 
-    Formula (fully auditable, no hidden state, no training required)::
+    _STEP = 0.08
+    _LOWER = 0.10
+    _UPPER = 0.90
 
-        score      = net_sentiment / _SENTIMENT_SCALE
-        percentile = 0.5 + 0.5 * tanh(score)      # squashes to (0, 1), centered at 0.5
-        percentile = clip(percentile, _MIN_PERCENTILE, _MAX_PERCENTILE)
-
-    With no keyword hits (``net_sentiment == 0``) this returns exactly
-    ``0.5`` — the same neutral value as :class:`BaselineModel` — so a
-    fact-free or neutral disclosure never produces a confident prediction.
-    ``tanh`` guarantees the output is smoothly bounded before the explicit
-    clip is even applied; the clip exists as a second, independent guarantee.
-    """
+    def fit(self, rows):
+        return self
 
     def predict_percentile(self, features: FeatureVector) -> float:
-        score = features.net_sentiment / _SENTIMENT_SCALE
-        raw = 0.5 + 0.5 * math.tanh(score)
-        return max(_MIN_PERCENTILE, min(_MAX_PERCENTILE, raw))
-
-    def fit(self, training_rows: list[tuple[FeatureVector, float]]) -> None:  # noqa: ARG002
-        # Rule-based, nothing to fit. Kept for interface parity with a future
-        # trained model — see the module docstring.
-        return None
+        raw = 0.5 + self._STEP * features.net_sentiment
+        return max(self._LOWER, min(self._UPPER, raw))
 
 
-def get_default_model() -> PercentileModel:
-    """The model ``predict.py`` uses today. Change this to change the live strategy.
+class ForwardLookingRidgeModel:
+    """Pure-Python inference from the serialized paper-informed Ridge artifact."""
 
-    Always returns an instance that requires no historical data and cannot
-    raise on construction, so callers never need a fallback path just to
-    obtain a model — see ``predict.py`` for the additional, independent
-    runtime safety net around calling it.
-    """
-    return HeuristicFactModel()
+    def __init__(self, artifact_path: str | Path | None = None) -> None:
+        self.artifact_path = Path(artifact_path) if artifact_path else DEFAULT_ARTIFACT_PATH
+        raw = json.loads(self.artifact_path.read_text(encoding="utf-8"))
+        self.model_version = str(raw["model_version"])
+        self.feature_names = tuple(str(x) for x in raw["feature_names"])
+        self.means = tuple(float(x) for x in raw["means"])
+        self.standard_deviations = tuple(float(x) for x in raw["standard_deviations"])
+        self.coefficients = tuple(float(x) for x in raw["coefficients"])
+        self.intercept = float(raw["intercept"])
+        bounds = raw.get("clip_bounds", [0.05, 0.95])
+        self.clip_lower, self.clip_upper = float(bounds[0]), float(bounds[1])
+        self.alpha = float(raw["selected_alpha"])
+        self.training_metadata = dict(raw.get("training_metadata") or {})
+        self._validate()
+
+    def _validate(self) -> None:
+        if self.feature_names != MODEL_FEATURE_NAMES:
+            raise ValueError("FLS artifact feature order does not match production extractor")
+        n = len(self.feature_names)
+        if not (len(self.means) == len(self.standard_deviations) == len(self.coefficients) == n):
+            raise ValueError("FLS artifact vector lengths do not match")
+        numbers = (*self.means, *self.standard_deviations, *self.coefficients, self.intercept)
+        if not all(math.isfinite(x) for x in numbers):
+            raise ValueError("FLS artifact contains non-finite parameters")
+        if any(sd <= 0.0 for sd in self.standard_deviations):
+            raise ValueError("FLS artifact standard deviations must be positive")
+        if not (0.0 <= self.clip_lower < self.clip_upper <= 1.0):
+            raise ValueError("FLS artifact clip bounds are invalid")
+
+    def standardize(self, features: ForwardLookingFeatures) -> list[float]:
+        raw = features.vector(self.feature_names)
+        return [
+            (value - mean) / sd
+            for value, mean, sd in zip(raw, self.means, self.standard_deviations, strict=True)
+        ]
+
+    def predict_features(self, features: ForwardLookingFeatures) -> float:
+        standardized = self.standardize(features)
+        prediction = self.intercept + sum(
+            coef * value for coef, value in zip(self.coefficients, standardized, strict=True)
+        )
+        if not math.isfinite(prediction):
+            raise ValueError("FLS Ridge produced a non-finite prediction")
+        return float(max(self.clip_lower, min(self.clip_upper, prediction)))
+
+    def predict_disclosure(self, disclosure: list[str]) -> float:
+        return self.predict_features(extract_forward_looking_features(disclosure))
+
+    def predict_with_features(self, disclosure: list[str]) -> tuple[float, ForwardLookingFeatures]:
+        features = extract_forward_looking_features(disclosure)
+        return self.predict_features(features), features
+
+
+def get_default_model() -> ForwardLookingRidgeModel | HeuristicFactModel | BaselineModel:
+    """Prefer the trained Ridge; degrade safely only when it is unavailable/invalid."""
+    try:
+        return ForwardLookingRidgeModel()
+    except Exception as exc:
+        print(f"[MODEL] fls_ridge unavailable; using heuristic fallback: {type(exc).__name__}")
+        try:
+            return HeuristicFactModel()
+        except Exception:
+            return BaselineModel()
