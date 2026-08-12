@@ -109,7 +109,7 @@
   "modal_deploy_status": "not_configured",
   "selected_alpha": 10.0,
   "tests_passed": 132,
-  "training_timestamp": "2026-08-12T04:31:32.586968+00:00",
+  "training_timestamp": "2026-08-12T04:34:08.803782+00:00",
   "validation": {
     "constant_0.5": {
       "mae": 0.25010464629552115,
