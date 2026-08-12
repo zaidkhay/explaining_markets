@@ -4,35 +4,36 @@
 already been verified for you. Return one prediction per focal asset. Everything
 else in this repo (webhook verification, dedupe, submission) is plumbing.
 
-The default implementation asks an OpenAI model for a calibrated percentile. If
-`OPENAI_API_KEY` is not set, it returns a 0.5 baseline so the full deploy →
-receive → submit round-trip still works without burning credits. Replace the body
-of `predict` with whatever strategy you like — the only contract is the return
-shape documented below.
+The current strategy is the MVP prediction pipeline in
+`src/explaining_markets/{features,model,historical,backtest}.py`:
+
+    fetch disclosure -> extract_features() -> model.predict_percentile()
+
+`features.py` builds a small, transparent feature set from the event's own
+disclosure text (never from a realized outcome — see that module's docstring),
+and `model.py` maps those features to a percentile via a simple, fully
+auditable rule (`HeuristicFactModel`), swappable for a trained model later
+without touching this file. See `backtest.py` for how to evaluate a model
+offline against `data/historical/` before changing `model.get_default_model`.
+
+Nothing here can fail the whole prediction: a missing/broken disclosure fetch,
+or any model error, degrades to a deterministic 0.5 baseline rather than
+raising, so the deploy -> receive -> submit round trip always completes.
 """
 
 from __future__ import annotations
 
-import json
-import os
-
 import httpx
-from openai import OpenAI
-from pydantic import BaseModel, Field
 
-from explaining_markets.config import openai_model
+from explaining_markets.features import extract_features
+from explaining_markets.model import PercentileModel, get_default_model
 
-_openai: OpenAI | None = None  # lazy: importing this file must not require a key
-_openai_warned = False         # one-shot warning when no key is configured
-
-# Timeouts, sized against the 5-minute prediction window that opens when your
-# handler ACKs the webhook. Worst case is 15 + (120 x 2) + 15 = 270s, which
-# fits with ~30s to spare. Nothing upstream retries a failed prediction — once
-# the delivery is ACKed the platform considers it done — so the one retry here
-# is the only one you get. Raising either value can push you past the deadline.
+# Sized against the 5-minute prediction window that opens when your handler
+# ACKs the webhook. This pipeline is a single, fast local computation (no LLM
+# call), so the only network I/O is this one disclosure fetch.
 SUMMARY_TIMEOUT_SECONDS = 15.0
-LLM_TIMEOUT_SECONDS = 120.0
-LLM_MAX_RETRIES = 1
+
+_NEUTRAL_BASELINE = 0.5
 
 
 def predict(event: dict) -> list[dict]:
@@ -53,114 +54,82 @@ def predict(event: dict) -> list[dict]:
     0.50 = median, 1 = its most positive. It's a cross-sectional rank across the
     quarter's events, not a percentile within the asset's own history.
     """
-    summary = httpx.get(event["information_url"], timeout=SUMMARY_TIMEOUT_SECONDS)
-    summary.raise_for_status()
-    summary_json = summary.json()
+    model = get_default_model()
+    disclosure = _fetch_disclosure(event.get("information_url"))
+    event_type = event.get("event_type", "UNKNOWN")
 
-    # One model call per focal asset, in series — so the LLM budget below is
-    # per asset, not per event. Today every event carries a single asset; if
-    # that changes and you need several, run them concurrently rather than
-    # raising the timeout.
     return [
         {
             "identifier_value": asset["identifier_value"],
-            "predicted_percentile": _ask_llm(
-                summary=summary_json,
+            "predicted_percentile": _predict_one(
+                model=model,
                 ticker=asset["identifier_value"],
-                event_type=event["event_type"],
+                event_type=event_type,
+                disclosure=disclosure,
             ),
         }
-        for asset in event["focal_assets"]
+        for asset in event.get("focal_assets", [])
     ]
 
 
-# ----------------------------------------------------------------------
-# Default strategy: a single calibrated LLM call per asset.
-# Swap this out, or rewrite `predict` entirely, to enter your own model.
-# ----------------------------------------------------------------------
+def _fetch_disclosure(information_url: str | None) -> list[str]:
+    """Best-effort fetch of the event's disclosure/summary facts.
 
-
-class Prediction(BaseModel):
-    """Structured response shape for the LLM call.
-
-    The `Field(ge=0, le=1)` constraint flows through into the JSON schema OpenAI's
-    structured-outputs mode enforces during decoding, so the model is guaranteed to
-    return a percentile in [0, 1] — no manual clamping or fallback parsing needed.
+    Never raises: any missing URL, network error, or unexpected payload shape
+    returns `[]` — a neutral, empty disclosure — rather than failing `predict()`.
+    The model layer treats an empty disclosure as "no signal" (see `model.py`),
+    which is exactly the deterministic-baseline behavior required when
+    upstream data is unavailable.
     """
-
-    predicted_percentile: float = Field(ge=0.0, le=1.0)
-
-
-SYSTEM_PROMPT = """\
-You are a senior equity analyst predicting how a stock will react to an event.
-
-Predict a single percentile in [0, 1] for how the focal asset's next-day
-abnormal return will rank across all of the quarter's event outcomes:
-0 = the quarter's most negative reaction, 0.50 = median, 1 = its most positive.
-The relevant return is the *unexpected*, market-adjusted return — a
-great-but-fully-priced-in beat is not a top-decile event.
-
-Calibration discipline:
-- Long-run base rates: about 25% of events land "up" (>0.75), 50% "neutral"
-  (0.25-0.75), 25% "down" (<0.25). Default toward 0.40-0.60 when signals are
-  mixed or modest.
-- Reserve values above 0.80 or below 0.20 for cases with unambiguous,
-  multi-signal evidence. Do not exceed 0.90 or fall below 0.10 without
-  overwhelming, lopsided evidence.
-- Tone alone (confident vs hedging language) should move you no more than
-  ~0.03 absent quantitative confirmation.
-"""
+    if not information_url:
+        return []
+    try:
+        resp = httpx.get(information_url, timeout=SUMMARY_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        payload = resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        print(f"[WARN] failed to fetch information_url ({exc}); using neutral baseline")
+        return []
+    return _facts_from_payload(payload)
 
 
-def _ask_llm(*, summary: dict, ticker: str, event_type: str) -> float:
-    """Ask the configured model for a calibrated percentile via structured outputs.
+def _facts_from_payload(payload: object) -> list[str]:
+    """Extract fact/summary sentences from an `information_url` response body.
 
-    Returns the model's `predicted_percentile`. Falls back to 0.5 if no
-    `OPENAI_API_KEY` is configured or the model refuses; the [0, 1] bound is
-    enforced by the JSON schema, not by us.
+    Handles the two shapes documented across the starter and the disclosure
+    schema: a `{"disclosure": {"items": [...]}}` bundle (kind="facts"), a bare
+    `{"facts": [...]}` list, or a `{"summary": "..."}` string. Anything else
+    yields `[]`.
     """
-    global _openai, _openai_warned
-    if not os.environ.get("OPENAI_API_KEY"):
-        if not _openai_warned:
-            print(
-                "[WARN] OPENAI_API_KEY not set — submitting 0.5 placeholder. "
-                "Set the key (or edit predict.py) for real predictions."
-            )
-            _openai_warned = True
-        return 0.5
-    if _openai is None:
-        # picks up OPENAI_API_KEY from env
-        _openai = OpenAI(
-            timeout=LLM_TIMEOUT_SECONDS, max_retries=LLM_MAX_RETRIES
-        )
+    if not isinstance(payload, dict):
+        return []
+    items = (payload.get("disclosure") or {}).get("items") or []
+    for item in items:
+        if isinstance(item, dict) and item.get("kind") == "facts":
+            return [str(f) for f in (item.get("content") or [])]
+    facts = payload.get("facts")
+    if isinstance(facts, list):
+        return [str(f) for f in facts]
+    summary = payload.get("summary")
+    if isinstance(summary, str) and summary:
+        return [summary]
+    return []
 
-    summary_text = summary.get("summary") if isinstance(summary, dict) else None
-    if not summary_text:
-        summary_text = json.dumps(summary)
-    summary_text = summary_text[:8000]
 
-    user_prompt = (
-        f"Event type: {event_type}\n"
-        f"Ticker: {ticker}\n\n"
-        f"Event summary:\n{summary_text}\n\n"
-        "Weigh, in roughly this order:\n"
-        "  1. Quantitative surprise vs expectations — revenue, EPS, segment metrics.\n"
-        "  2. Guidance / outlook — raises, holds, cuts vs the prior trajectory.\n"
-        "  3. Strategic shifts — product launches, M&A, capital allocation, leadership.\n"
-        "  4. Tone and confidence in management commentary (small weight).\n"
-        "  5. Risks called out — regulatory, supply chain, demand, competition.\n\n"
-        f"Predict the next-day unexpected-return percentile for {ticker}."
-    )
+def _predict_one(
+    *, model: PercentileModel, ticker: str, event_type: str, disclosure: list[str]
+) -> float:
+    """Run the model for one asset; never raises.
 
-    resp = _openai.chat.completions.parse(
-        model=openai_model(),
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_format=Prediction,
-    )
-    parsed = resp.choices[0].message.parsed
-    if parsed is None:
-        return 0.5  # model refused; competition expects a number
-    return parsed.predicted_percentile
+    Any feature-extraction or model failure falls back to the deterministic
+    0.5 baseline, so a bug in a future (e.g. trained) model can never take
+    down the whole prediction — the competition scores nothing worse than a
+    neutral, unscored-looking guess for that asset.
+    """
+    try:
+        features = extract_features(ticker=ticker, event_type=event_type, disclosure=disclosure)
+        percentile = float(model.predict_percentile(features))
+    except Exception as exc:  # noqa: BLE001 - model must never crash the pipeline
+        print(f"[WARN] model prediction failed for {ticker} ({exc}); using 0.5 baseline")
+        return _NEUTRAL_BASELINE
+    return max(0.0, min(1.0, percentile))

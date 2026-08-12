@@ -28,3 +28,11 @@ venv/
 # Ignored md files
 HISTORICAL_DATA_INVESTIGATION.md
 
+# Local historical-data cache (populate separately; never commit bulk data)
+data/historical/*
+data/processed/*
+!data/historical/.gitkeep
+!data/historical/README.md
+!data/processed/.gitkeep
+!data/processed/README.md
+
