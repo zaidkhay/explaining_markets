@@ -33,6 +33,7 @@ data/historical/*
 data/processed/*
 !data/historical/.gitkeep
 !data/historical/README.md
+!data/historical/PROVENANCE.json
 !data/processed/.gitkeep
 !data/processed/README.md
 
