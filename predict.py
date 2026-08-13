@@ -85,10 +85,6 @@ def _predict_one(
     *, model, ticker: str, event_type: str, disclosure: list[str], cutoff=None,
     information_url_fetch_success: bool = True,
 ) -> float:
-    # V3 can only arrive here if its serialized artifact passed the promotion
-    # gate. External provider families are represented explicitly as missing
-    # unless a point-in-time context adapter has populated them. A V3 failure
-    # falls back to V1 rather than collapsing directly to 0.50.
     try:
         from explaining_markets.model_v3 import MultiSignalV3Model
     except Exception:
@@ -96,11 +92,12 @@ def _predict_one(
 
     if MultiSignalV3Model and isinstance(model, MultiSignalV3Model):
         try:
+            from explaining_markets.cached_v3_context import context_from_existing_cache
             from explaining_markets.features_v3 import build_feature_vector_v3, family_availability
             from explaining_markets.point_in_time_audit_v3 import audit_context
-            from explaining_markets.v3_records import V3Context
 
-            context = V3Context(ticker=ticker, cutoff=cutoff or datetime.now(timezone.utc))
+            actual_cutoff = cutoff or datetime.now(timezone.utc)
+            context = context_from_existing_cache(ticker, actual_cutoff)
             audit_context(context)
             vector = build_feature_vector_v3(disclosure=disclosure, context=context)
             prediction = model.predict_vector(vector)
@@ -126,8 +123,6 @@ def _predict_one(
                 print(f"[PREDICT] ticker={ticker} fls_ridge_v1 load failed: {type(v1_exc).__name__}")
                 model = HeuristicFactModel()
 
-    # V2 remains callable for reproducibility but get_default_model never
-    # promotes it in V3 production. Keep its inference path for explicit use.
     if isinstance(model, CompanyHistoryRidgeModel):
         try:
             provider = _history_provider()
