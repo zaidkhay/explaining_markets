@@ -1,14 +1,8 @@
 """Live prediction entry point.
 
-Real events fetch the competition disclosure facts and run the model chain
-(promoted V2 with company history -> fls_ridge_v1 -> heuristic -> 0.50),
-returning one CAR1 percentile per focal ticker. Every prediction logs which
-model actually produced it — fallbacks are never silent. The Modal worker
-keeps synthetic TEST events on its existing neutral 0.50 path.
-
-Company history for V2 comes from the packaged archive snapshot
-(millisecond load, no network); no bulk historical download ever happens
-inside this call.
+Production selection is promotion-gated V3 -> fls_ridge_v1 -> heuristic ->
+0.50. Every fallback is logged. Synthetic TEST events remain neutral in the
+Modal worker before this function is called.
 """
 
 from __future__ import annotations
@@ -27,12 +21,10 @@ from explaining_markets.model import (
 )
 
 _FETCH_TIMEOUT_SECONDS = 20.0
-
-_history_provider_cache: list = []  # lazy singleton; [provider-or-None] once loaded
+_history_provider_cache: list = []
 
 
 def _history_provider():
-    """Load the packaged snapshot provider once; None when unavailable."""
     if not _history_provider_cache:
         try:
             from explaining_markets.competition_history import SnapshotCompanyHistoryProvider
@@ -45,13 +37,6 @@ def _history_provider():
 
 
 def _event_cutoff(event: dict) -> datetime:
-    """The prediction knowledge cutoff for history eligibility.
-
-    Uses the event's own timestamp when parseable (never later information),
-    falling back to "now" — for a live event, now is always at/after the
-    event, and the history snapshot only contains sealed pre-2026Q3 outcomes,
-    so both choices are point-in-time safe.
-    """
     raw = event.get("event_datetime")
     if raw:
         try:
@@ -72,9 +57,11 @@ def predict(event: dict) -> list[dict]:
     if not tickers:
         return []
 
+    fetch_success = True
     try:
         disclosure = _fetch_disclosure(event.get("information_url"))
     except Exception as exc:
+        fetch_success = False
         print(f"[PREDICT] disclosure fetch failed: {type(exc).__name__}; using neutral baseline")
         return _neutral(tickers)
 
@@ -88,14 +75,59 @@ def predict(event: dict) -> list[dict]:
             event_type=str(event.get("event_type") or "UNKNOWN"),
             disclosure=disclosure,
             cutoff=cutoff,
+            information_url_fetch_success=fetch_success,
         )
         out.append({"identifier_value": ticker, "predicted_percentile": float(prediction)})
     return out
 
 
-def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str], cutoff=None) -> float:
-    # Healthiest path: promoted V2 (FLS + company history from the packaged
-    # snapshot). Falls back explicitly — never silently — to V1 on any error.
+def _predict_one(
+    *, model, ticker: str, event_type: str, disclosure: list[str], cutoff=None,
+    information_url_fetch_success: bool = True,
+) -> float:
+    # V3 can only arrive here if its serialized artifact passed the promotion
+    # gate. External provider families are represented explicitly as missing
+    # unless a point-in-time context adapter has populated them. A V3 failure
+    # falls back to V1 rather than collapsing directly to 0.50.
+    try:
+        from explaining_markets.model_v3 import MultiSignalV3Model
+    except Exception:
+        MultiSignalV3Model = ()  # type: ignore[assignment]
+
+    if MultiSignalV3Model and isinstance(model, MultiSignalV3Model):
+        try:
+            from explaining_markets.features_v3 import build_feature_vector_v3, family_availability
+            from explaining_markets.point_in_time_audit_v3 import audit_context
+            from explaining_markets.v3_records import V3Context
+
+            context = V3Context(ticker=ticker, cutoff=cutoff or datetime.now(timezone.utc))
+            audit_context(context)
+            vector = build_feature_vector_v3(disclosure=disclosure, context=context)
+            prediction = model.predict_vector(vector)
+            availability = family_availability(vector)
+            unavailable = ",".join(name for name, value in availability.items() if not value) or "none"
+            print(
+                "[PREDICT] "
+                f"ticker={ticker} model={model.model_version} "
+                f"unavailable_families={unavailable} "
+                f"eps_surprise_pct={vector.values['eps_surprise_percent']:.4f} "
+                f"revenue_surprise_pct={vector.values['revenue_surprise_percent']:.4f} "
+                f"guidance_vs_consensus={vector.values['guidance_surprise_percent']:.4f} "
+                f"prior_earnings_count={vector.values['prior_earnings_count']:.0f} "
+                f"return_20d={vector.values['return_20d']:.4f} "
+                f"prediction={prediction:.4f}"
+            )
+            return _bounded(prediction)
+        except Exception as exc:
+            print(f"[PREDICT] ticker={ticker} V3 failed: {type(exc).__name__}; falling back to fls_ridge_v1")
+            try:
+                model = ForwardLookingRidgeModel()
+            except Exception as v1_exc:
+                print(f"[PREDICT] ticker={ticker} fls_ridge_v1 load failed: {type(v1_exc).__name__}")
+                model = HeuristicFactModel()
+
+    # V2 remains callable for reproducibility but get_default_model never
+    # promotes it in V3 production. Keep its inference path for explicit use.
     if isinstance(model, CompanyHistoryRidgeModel):
         try:
             provider = _history_provider()
@@ -111,16 +143,9 @@ def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str], 
             values = vector.values
             print(
                 "[PREDICT] "
-                f"ticker={ticker} model={model.model_version} "
-                f"history_source={history_source} "
+                f"ticker={ticker} model={model.model_version} history_source={history_source} "
                 f"prior_earnings_count={values['prior_earnings_count']:.0f} "
-                f"mean_prior_earnings_abnormal_return={values['mean_prior_earnings_abnormal_return']:.4f} "
-                f"last_prior_competition_car1={values['last_prior_competition_car1']:.4f} "
-                f"has_competition_history={values['has_competition_history']:.0f} "
-                f"fls_ratio={values['fls_ratio']:.3f} "
-                f"signed_forward_tone={values['signed_forward_tone']:.3f} "
-                f"guidance_direction={values['guidance_direction']:.0f} "
-                f"prediction={prediction:.4f}"
+                f"fls_ratio={values['fls_ratio']:.3f} prediction={prediction:.4f}"
             )
             return _bounded(prediction)
         except Exception as exc:
@@ -131,14 +156,20 @@ def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str], 
                 print(f"[PREDICT] ticker={ticker} fls_ridge_v1 load failed: {type(v1_exc).__name__}")
                 model = HeuristicFactModel()
 
-    # Production path today: paper-informed extraction + serialized V1 Ridge.
     if isinstance(model, ForwardLookingRidgeModel):
         try:
             prediction, fls = model.predict_with_features(disclosure)
             values = fls.values
+            vector = [float(values[name]) for name in model.feature_names]
+            nonzero = sum(abs(x) > 1e-12 for x in vector)
+            norm = sum(x * x for x in vector) ** 0.5
             print(
                 "[PREDICT] "
                 f"ticker={ticker} model={model.model_version} "
+                f"disclosure_fact_count={len(disclosure)} "
+                f"non_zero_fls_feature_count={nonzero} fls_vector_norm={norm:.4f} "
+                f"information_url_fetch_success={int(information_url_fetch_success)} "
+                f"empty_disclosure_flag={int(not disclosure)} "
                 f"fls_ratio={values['fls_ratio']:.3f} "
                 f"quant_earnings_ratio={values['quant_earnings_fls_ratio']:.3f} "
                 f"other_fls_ratio={values['other_fls_ratio']:.3f} "
@@ -151,7 +182,6 @@ def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str], 
             print(f"[PREDICT] ticker={ticker} fls_ridge failed: {type(exc).__name__}; using heuristic")
             model = HeuristicFactModel()
 
-    # First fallback: the pre-existing disclosure heuristic.
     if isinstance(model, HeuristicFactModel):
         try:
             features = extract_features(ticker=ticker, event_type=event_type, disclosure=disclosure)
@@ -164,8 +194,6 @@ def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str], 
         except Exception as exc:
             print(f"[PREDICT] ticker={ticker} heuristic failed: {type(exc).__name__}; using baseline")
 
-    # Final fallback: deterministic 0.50. This path is only for unexpected
-    # artifact/feature/model failures, not the healthy live default.
     baseline = BaselineModel()
     features = extract_features(ticker=ticker, event_type=event_type, disclosure=[])
     return baseline.predict_percentile(features)
@@ -199,7 +227,6 @@ def _fetch_disclosure(information_url: str | None) -> list[str]:
     if isinstance(summary, list):
         return [str(x) for x in summary]
 
-    # Last-resort textual fields only; never inspect realized outcome keys.
     forbidden = {"car1", "earnings_surprise", "event_returns", "baseline_predictions"}
     return [str(v) for k, v in payload.items() if k not in forbidden and isinstance(v, str)]
 
