@@ -1,25 +1,66 @@
 """Live prediction entry point.
 
-Real events fetch the competition disclosure facts, run the paper-informed
-ForwardLookingRidgeModel, and return one CAR1 percentile per focal ticker.
-The Modal worker keeps synthetic TEST events on its existing neutral 0.50 path.
+Real events fetch the competition disclosure facts and run the model chain
+(promoted V2 with company history -> fls_ridge_v1 -> heuristic -> 0.50),
+returning one CAR1 percentile per focal ticker. Every prediction logs which
+model actually produced it — fallbacks are never silent. The Modal worker
+keeps synthetic TEST events on its existing neutral 0.50 path.
+
+Company history for V2 comes from the packaged archive snapshot
+(millisecond load, no network); no bulk historical download ever happens
+inside this call.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime, timezone
 
 import httpx
 
 from explaining_markets.features import extract_features
 from explaining_markets.model import (
     BaselineModel,
+    CompanyHistoryRidgeModel,
     ForwardLookingRidgeModel,
     HeuristicFactModel,
     get_default_model,
 )
 
 _FETCH_TIMEOUT_SECONDS = 20.0
+
+_history_provider_cache: list = []  # lazy singleton; [provider-or-None] once loaded
+
+
+def _history_provider():
+    """Load the packaged snapshot provider once; None when unavailable."""
+    if not _history_provider_cache:
+        try:
+            from explaining_markets.competition_history import SnapshotCompanyHistoryProvider
+
+            _history_provider_cache.append(SnapshotCompanyHistoryProvider())
+        except Exception as exc:
+            print(f"[PREDICT] history snapshot unavailable: {type(exc).__name__}")
+            _history_provider_cache.append(None)
+    return _history_provider_cache[0]
+
+
+def _event_cutoff(event: dict) -> datetime:
+    """The prediction knowledge cutoff for history eligibility.
+
+    Uses the event's own timestamp when parseable (never later information),
+    falling back to "now" — for a live event, now is always at/after the
+    event, and the history snapshot only contains sealed pre-2026Q3 outcomes,
+    so both choices are point-in-time safe.
+    """
+    raw = event.get("event_datetime")
+    if raw:
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                return parsed
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
 
 
 def predict(event: dict) -> list[dict]:
@@ -38,6 +79,7 @@ def predict(event: dict) -> list[dict]:
         return _neutral(tickers)
 
     model = get_default_model()
+    cutoff = _event_cutoff(event)
     out: list[dict] = []
     for ticker in tickers:
         prediction = _predict_one(
@@ -45,13 +87,51 @@ def predict(event: dict) -> list[dict]:
             ticker=ticker,
             event_type=str(event.get("event_type") or "UNKNOWN"),
             disclosure=disclosure,
+            cutoff=cutoff,
         )
         out.append({"identifier_value": ticker, "predicted_percentile": float(prediction)})
     return out
 
 
-def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str]) -> float:
-    # Healthy production path: paper-informed extraction + serialized Ridge.
+def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str], cutoff=None) -> float:
+    # Healthiest path: promoted V2 (FLS + company history from the packaged
+    # snapshot). Falls back explicitly — never silently — to V1 on any error.
+    if isinstance(model, CompanyHistoryRidgeModel):
+        try:
+            provider = _history_provider()
+            if provider is not None and cutoff is not None:
+                history = provider.history_before(ticker, cutoff)
+                history_source = "cache"
+            else:
+                from explaining_markets.company_history import empty_company_history
+
+                history = empty_company_history(ticker, cutoff or datetime.now(timezone.utc))
+                history_source = "missing"
+            prediction, vector = model.predict(disclosure=disclosure, history=history)
+            values = vector.values
+            print(
+                "[PREDICT] "
+                f"ticker={ticker} model={model.model_version} "
+                f"history_source={history_source} "
+                f"prior_earnings_count={values['prior_earnings_count']:.0f} "
+                f"mean_prior_earnings_abnormal_return={values['mean_prior_earnings_abnormal_return']:.4f} "
+                f"last_prior_competition_car1={values['last_prior_competition_car1']:.4f} "
+                f"has_competition_history={values['has_competition_history']:.0f} "
+                f"fls_ratio={values['fls_ratio']:.3f} "
+                f"signed_forward_tone={values['signed_forward_tone']:.3f} "
+                f"guidance_direction={values['guidance_direction']:.0f} "
+                f"prediction={prediction:.4f}"
+            )
+            return _bounded(prediction)
+        except Exception as exc:
+            print(f"[PREDICT] ticker={ticker} v2 failed: {type(exc).__name__}; falling back to fls_ridge_v1")
+            try:
+                model = ForwardLookingRidgeModel()
+            except Exception as v1_exc:
+                print(f"[PREDICT] ticker={ticker} fls_ridge_v1 load failed: {type(v1_exc).__name__}")
+                model = HeuristicFactModel()
+
+    # Production path today: paper-informed extraction + serialized V1 Ridge.
     if isinstance(model, ForwardLookingRidgeModel):
         try:
             prediction, fls = model.predict_with_features(disclosure)

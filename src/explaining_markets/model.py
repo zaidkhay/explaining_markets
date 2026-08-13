@@ -15,6 +15,9 @@ from explaining_markets.forward_looking_features import (
 )
 
 DEFAULT_ARTIFACT_PATH = Path(__file__).with_name("artifacts") / "fls_ridge_v1.json"
+DEFAULT_V2_ARTIFACT_PATH = (
+    Path(__file__).with_name("artifacts") / "fls_company_history_ridge_v2.json"
+)
 
 
 @runtime_checkable
@@ -102,8 +105,97 @@ class ForwardLookingRidgeModel:
         return self.predict_features(features), features
 
 
-def get_default_model() -> ForwardLookingRidgeModel | HeuristicFactModel | BaselineModel:
-    """Prefer the trained Ridge; degrade safely only when it is unavailable/invalid."""
+class CompanyHistoryRidgeModel:
+    """Pure-Python inference for the V2 (FLS + company history) Ridge artifact.
+
+    Loads ``fls_company_history_ridge_v2.json`` and validates it against the
+    frozen ``MODEL_FEATURE_NAMES_V2`` order — any mismatch between the
+    artifact and production extraction fails loudly at construction. The
+    artifact's ``promoted`` flag records the predeclared offline gate
+    (``v2_training.PROMOTION_GATE``): :func:`get_default_model` only prefers
+    V2 over V1 when it is true.
+    """
+
+    def __init__(self, artifact_path: str | Path | None = None) -> None:
+        # Imported lazily so V1 inference never depends on the V2 modules.
+        from explaining_markets.features_v2 import MODEL_FEATURE_NAMES_V2
+
+        self.artifact_path = Path(artifact_path) if artifact_path else DEFAULT_V2_ARTIFACT_PATH
+        raw = json.loads(self.artifact_path.read_text(encoding="utf-8"))
+        self.model_version = str(raw["model_version"])
+        self.feature_names = tuple(str(x) for x in raw["feature_names"])
+        self.means = tuple(float(x) for x in raw["means"])
+        self.standard_deviations = tuple(float(x) for x in raw["standard_deviations"])
+        self.coefficients = tuple(float(x) for x in raw["coefficients"])
+        self.intercept = float(raw["intercept"])
+        bounds = raw.get("clip_bounds", [0.05, 0.95])
+        self.clip_lower, self.clip_upper = float(bounds[0]), float(bounds[1])
+        self.alpha = float(raw["selected_alpha"])
+        self.promoted = bool(raw.get("promoted", False))
+        self.training_metadata = dict(raw.get("training_metadata") or {})
+        self._expected_names = MODEL_FEATURE_NAMES_V2
+        self._validate()
+
+    def _validate(self) -> None:
+        if self.feature_names != self._expected_names:
+            raise ValueError("V2 artifact feature order does not match production extractor")
+        n = len(self.feature_names)
+        if not (len(self.means) == len(self.standard_deviations) == len(self.coefficients) == n):
+            raise ValueError("V2 artifact vector lengths do not match")
+        numbers = (*self.means, *self.standard_deviations, *self.coefficients, self.intercept)
+        if not all(math.isfinite(x) for x in numbers):
+            raise ValueError("V2 artifact contains non-finite parameters")
+        if any(sd <= 0.0 for sd in self.standard_deviations):
+            raise ValueError("V2 artifact standard deviations must be positive")
+        if not (0.0 <= self.clip_lower < self.clip_upper <= 1.0):
+            raise ValueError("V2 artifact clip bounds are invalid")
+
+    def predict_vector(self, vector: "object") -> float:
+        """Predict from an assembled ``features_v2.FeatureVectorV2``."""
+        raw = vector.vector(self.feature_names)
+        prediction = self.intercept + sum(
+            coef * (value - mean) / sd
+            for coef, value, mean, sd in zip(
+                self.coefficients, raw, self.means, self.standard_deviations, strict=True
+            )
+        )
+        if not math.isfinite(prediction):
+            raise ValueError("V2 Ridge produced a non-finite prediction")
+        return float(max(self.clip_lower, min(self.clip_upper, prediction)))
+
+    def predict(self, *, disclosure: list[str], history) -> tuple[float, "object"]:
+        """Convenience: extract FLS, assemble the V2 vector, and predict.
+
+        ``history`` is a ``company_history.CompanyHistoryFeatures`` (use
+        ``company_history.empty_company_history`` when no history exists —
+        the availability indicators make that an explicit, modeled state).
+        """
+        from explaining_markets.features_v2 import build_feature_vector_v2
+
+        vector = build_feature_vector_v2(
+            fls=extract_forward_looking_features(disclosure), history=history
+        )
+        return self.predict_vector(vector), vector
+
+
+def get_default_model() -> (
+    "CompanyHistoryRidgeModel | ForwardLookingRidgeModel | HeuristicFactModel | BaselineModel"
+):
+    """Fallback chain: promoted V2 -> V1 -> heuristic -> baseline.
+
+    V2 is used only when its artifact exists, validates, AND records
+    ``promoted: true`` from the predeclared offline gate — a V2 that merely
+    trains never displaces the live V1 (deployment rule, Part 30).
+    """
+    try:
+        v2 = CompanyHistoryRidgeModel()
+        if v2.promoted:
+            return v2
+        print("[MODEL] v2 artifact present but not promoted; using fls_ridge_v1")
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        print(f"[MODEL] v2 artifact unavailable/invalid; using fls_ridge_v1: {type(exc).__name__}")
     try:
         return ForwardLookingRidgeModel()
     except Exception as exc:

@@ -31,9 +31,16 @@ HISTORICAL_DATA_INVESTIGATION.md
 # Local historical-data cache (populate separately; never commit bulk data)
 data/historical/*
 data/processed/*
+data/company_history/*
 !data/historical/.gitkeep
 !data/historical/README.md
 !data/historical/PROVENANCE.json
 !data/processed/.gitkeep
 !data/processed/README.md
+!data/company_history/README.md
+
+# Derived from the sealed archive; regenerate with competition_history.write_snapshot.
+# Kept out of git (bulk archive-derived data) but still mounted into the Modal
+# image, which reads the working tree (add_local_python_source ignore=[]).
+src/explaining_markets/artifacts/company_history_snapshot_v1.json
 
