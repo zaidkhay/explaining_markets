@@ -158,15 +158,11 @@ def test_snapshot_round_trip_provider(tmp_path) -> None:
     assert unknown.values["prior_earnings_count"] == 0.0
 
 
-def test_snapshot_provider_respects_cutoff_lag() -> None:
+def test_snapshot_provider_respects_cutoff_lag(tmp_path) -> None:
     events = [_event("a1", "AAPL", "2026-01-05T00:00:00+00:00", car1=0.01)]
-    snapshot = build_snapshot(events)
-    assert snapshot["n_rows"] == 1
+    path = write_snapshot(events, tmp_path / "snapshot.json")
+    provider = SnapshotCompanyHistoryProvider(path)
     # A cutoff only 3 days after the event: outcome not conservatively knowable.
-    import json
-
-    provider = SnapshotCompanyHistoryProvider.__new__(SnapshotCompanyHistoryProvider)
-    provider._tickers = snapshot["tickers"]
     early = provider.history_before("AAPL", datetime(2026, 1, 8, tzinfo=UTC))
     assert early.values["prior_earnings_count"] == 0.0
     late = provider.history_before("AAPL", datetime(2026, 2, 1, tzinfo=UTC))

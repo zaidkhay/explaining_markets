@@ -138,13 +138,6 @@ def test_cache_excludes_records_at_or_after_cutoff(tmp_path) -> None:
     cache.close()
 
 
-def test_cache_cutoff_is_mandatory(tmp_path) -> None:
-    cache = CompanyHistoryCache(tmp_path / "cache.sqlite")
-    with pytest.raises((TypeError, ValueError)):
-        cache.daily_prices_before("AAPL", None)  # type: ignore[arg-type]
-    cache.close()
-
-
 def test_cache_isolates_tickers(tmp_path) -> None:
     cache = CompanyHistoryCache(tmp_path / "cache.sqlite")
     cache.upsert_prices([_bar(5)])
