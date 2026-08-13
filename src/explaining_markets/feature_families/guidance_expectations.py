@@ -8,8 +8,8 @@ GUIDANCE_FEATURE_NAMES = (
     "eps_guidance_low", "eps_guidance_high", "eps_guidance_mid", "ebitda_guidance",
     "margin_guidance", "revenue_guidance_vs_consensus", "eps_guidance_vs_consensus",
     "guidance_surprise_percent", "guidance_above_consensus", "guidance_below_consensus",
-    "guidance_inline", "guidance_raised", "guidance_lowered", "guidance_reaffirmed",
-    "has_numeric_guidance", "has_guidance_consensus",
+    "guidance_inline", "numeric_guidance_raised", "numeric_guidance_lowered",
+    "guidance_reaffirmed", "has_numeric_guidance", "has_guidance_consensus",
 )
 
 
@@ -58,8 +58,8 @@ def guidance_expectation_features(record: GuidanceRecord | None, cutoff) -> dict
         "guidance_above_consensus": float(has_consensus and combined > tol),
         "guidance_below_consensus": float(has_consensus and combined < -tol),
         "guidance_inline": float(has_consensus and abs(combined) <= tol),
-        "guidance_raised": float(direction == "raised"),
-        "guidance_lowered": float(direction in {"lowered", "cut"}),
+        "numeric_guidance_raised": float(direction == "raised"),
+        "numeric_guidance_lowered": float(direction in {"lowered", "cut"}),
         "guidance_reaffirmed": float(direction in {"reaffirmed", "maintained"}),
         "has_numeric_guidance": float(has_numeric),
         "has_guidance_consensus": float(has_consensus),
