@@ -13,9 +13,10 @@ MARKET_SECTOR_FEATURE_NAMES = (
 
 
 def _vol20(rows):
-    if len(rows) < 3:
+    window = rows[-21:]
+    if len(window) < 3:
         return 0.0
-    rets = [rows[i].close / rows[i - 1].close - 1.0 for i in range(1, len(rows[-21:]))]
+    rets = [window[i].close / window[i - 1].close - 1.0 for i in range(1, len(window))]
     if len(rets) < 2:
         return 0.0
     mu = sum(rets) / len(rets)
