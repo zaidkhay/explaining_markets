@@ -1,20 +1,14 @@
-"""Provider interfaces for point-in-time V3 data sources.
+"""Provider interfaces and bundle for point-in-time V3 data sources.
 
 Implementations may use local caches, databases, or external APIs. Missing
 credentials must produce empty results rather than fabricated observations.
 """
 from __future__ import annotations
 
-from typing import Protocol
+from dataclasses import dataclass
+from typing import Any, Protocol
 
-from explaining_markets.v3_records import (
-    CompanyMetadataRecord,
-    EarningsRecord,
-    GuidanceRecord,
-    NewsRecord,
-    PeerRecord,
-    PriceRecord,
-)
+from explaining_markets.v3_records import CompanyMetadataRecord, EarningsRecord, GuidanceRecord, NewsRecord, PeerRecord, PriceRecord
 
 
 class EarningsProvider(Protocol):
@@ -45,7 +39,9 @@ class NewsProvider(Protocol):
 
 
 class NullV3Providers:
-    """Credential-free provider bundle used to express missingness safely."""
+    """Credential-free implementation used to express missingness safely."""
+
+    receipts: tuple[dict, ...] = ()
 
     def current(self, ticker, cutoff):
         return None
@@ -67,3 +63,32 @@ class NullV3Providers:
 
     def sector_news(self, sector, cutoff, days: int = 7):
         return ()
+
+
+@dataclass(frozen=True)
+class V3ProviderBundle:
+    earnings: EarningsProvider
+    guidance: GuidanceProvider
+    prices: PriceProvider
+    metadata: MetadataProvider
+    peers: PeerProvider
+    news: NewsProvider
+    article_reasoner: Any
+    event_reasoner: Any
+
+    @classmethod
+    def null(cls) -> "V3ProviderBundle":
+        from explaining_markets.reasoning.event_reasoner import EventReasoner
+        from explaining_markets.reasoning.news_reasoner import NewsReasoner
+
+        null = NullV3Providers()
+        return cls(
+            earnings=null,
+            guidance=null,
+            prices=null,
+            metadata=null,
+            peers=null,
+            news=null,
+            article_reasoner=NewsReasoner(use_openai=False),
+            event_reasoner=EventReasoner(use_openai=False),
+        )
