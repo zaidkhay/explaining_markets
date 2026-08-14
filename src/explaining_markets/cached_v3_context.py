@@ -1,8 +1,16 @@
 """Adapter from the existing offline SQLite history cache into V3 records."""
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from explaining_markets.data_providers.cache import CompanyHistoryCache, DEFAULT_CACHE_PATH
 from explaining_markets.v3_records import EarningsRecord, PriceRecord, V3Context
+
+
+def configured_cache_path() -> Path:
+    value = os.getenv("V3_HISTORY_CACHE_PATH")
+    return Path(value) if value else DEFAULT_CACHE_PATH
 
 
 def _price(bar):
@@ -39,9 +47,10 @@ def _earnings(row, cutoff):
 
 def context_from_existing_cache(ticker, cutoff, *, market_ticker="SPY") -> V3Context:
     """Use only already-built cache data; never create/rebuild history live."""
-    if not DEFAULT_CACHE_PATH.exists():
-        return V3Context(ticker=ticker, cutoff=cutoff)
-    cache = CompanyHistoryCache(DEFAULT_CACHE_PATH)
+    cache_path = configured_cache_path()
+    if not cache_path.exists():
+        return V3Context(ticker=ticker, cutoff=cutoff, extras={"cache_source": str(cache_path), "cache_available": False})
+    cache = CompanyHistoryCache(cache_path)
     try:
         stock = tuple(_price(x) for x in cache.daily_prices_before(ticker, cutoff, max_days=5 * 366))
         market = tuple(_price(x) for x in cache.daily_prices_before(market_ticker, cutoff, max_days=5 * 366))
@@ -54,7 +63,7 @@ def context_from_existing_cache(ticker, cutoff, *, market_ticker="SPY") -> V3Con
             company_history=history,
             stock_prices=stock,
             market_prices=market,
-            extras={"cache_source": str(DEFAULT_CACHE_PATH)},
+            extras={"cache_source": str(cache_path), "cache_available": True},
         )
     finally:
         cache.close()
