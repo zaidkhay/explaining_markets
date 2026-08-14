@@ -10,11 +10,12 @@ from explaining_markets.feature_families.market_sector import MARKET_SECTOR_FEAT
 from explaining_markets.feature_families.news import NEWS_FEATURE_NAMES, news_features
 from explaining_markets.feature_families.peer_sympathy import PEER_FEATURE_NAMES, peer_sympathy_features
 from explaining_markets.feature_families.price_context import PRICE_CONTEXT_FEATURE_NAMES, price_context_features
+from explaining_markets.feature_families.reasoning import REASONING_FEATURE_NAMES, reasoning_features
 from explaining_markets.feature_families.revenue_results import REVENUE_SURPRISE_FEATURE_NAMES, revenue_surprise_features
 from explaining_markets.forward_looking_features import MODEL_FEATURE_NAMES, ForwardLookingFeatures, extract_forward_looking_features
 from explaining_markets.v3_records import V3Context
 
-FEATURE_SPEC_VERSION_V3 = "v3"
+FEATURE_SPEC_VERSION_V3 = "v3.1-live-news-reasoning"
 
 GUIDANCE_INTERACTION_FEATURE_NAMES = (
     "eps_beat_but_guidance_cut", "eps_miss_but_guidance_raised",
@@ -32,6 +33,7 @@ MODEL_FEATURE_NAMES_V3: tuple[str, ...] = (
     *MARKET_SECTOR_FEATURE_NAMES,
     *PEER_FEATURE_NAMES,
     *NEWS_FEATURE_NAMES,
+    *REASONING_FEATURE_NAMES,
 )
 
 FORBIDDEN_V3_FEATURE_NAMES = frozenset({
@@ -81,8 +83,12 @@ def build_feature_vector_v3(*, disclosure: list[str], context: V3Context) -> Fea
         current_revenue_surprise=rev["revenue_surprise_percent"] if rev["has_revenue_surprise"] else None,
         shrinkage_priors=context.extras.get("history_shrinkage_priors"),
     )
+    reasoning = reasoning_features(context.event_reasoning)
     values: dict[str, float] = {name: float(fls.values[name]) for name in MODEL_FEATURE_NAMES}
-    blocks = (eps, rev, guide, _guidance_interactions(eps, rev, guide, fls.values), history, price, market, peers, news)
+    blocks = (
+        eps, rev, guide, _guidance_interactions(eps, rev, guide, fls.values), history,
+        price, market, peers, news, reasoning,
+    )
     for block in blocks:
         values.update({name: float(value) for name, value in block.items()})
     if tuple(values) != MODEL_FEATURE_NAMES_V3:
@@ -98,4 +104,5 @@ def family_availability(vector: FeatureVectorV3) -> dict[str, float]:
         "price_5y": v["has_5y_price_history"], "company_history": v["has_company_earnings_history"],
         "peers": v["has_peer_data"], "company_news": v["has_company_news"],
         "peer_news": v["has_peer_news"], "sector_news": v["has_sector_news"],
+        "reasoning": v["has_reasoning"],
     }
