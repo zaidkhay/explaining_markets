@@ -32,6 +32,7 @@ HISTORICAL_DATA_INVESTIGATION.md
 data/historical/*
 data/processed/*
 data/company_history/*
+data/evidence/*
 !data/historical/.gitkeep
 !data/historical/README.md
 !data/historical/PROVENANCE.json
@@ -43,4 +44,3 @@ data/company_history/*
 # Kept out of git (bulk archive-derived data) but still mounted into the Modal
 # image, which reads the working tree (add_local_python_source ignore=[]).
 src/explaining_markets/artifacts/company_history_snapshot_v1.json
-
