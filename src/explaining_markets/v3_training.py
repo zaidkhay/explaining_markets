@@ -17,18 +17,17 @@ import numpy as np
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import ElasticNet, Ridge
 
-from explaining_markets.features_v3 import (
-    MODEL_FEATURE_NAMES_V3,
-    NEWS_FEATURE_NAMES,
-)
-from explaining_markets.forward_looking_features import MODEL_FEATURE_NAMES
 from explaining_markets.feature_families.company_history_v3 import COMPANY_HISTORY_V3_FEATURE_NAMES
 from explaining_markets.feature_families.earnings_surprise import EARNINGS_SURPRISE_FEATURE_NAMES
 from explaining_markets.feature_families.guidance_expectations import GUIDANCE_FEATURE_NAMES
 from explaining_markets.feature_families.market_sector import MARKET_SECTOR_FEATURE_NAMES
+from explaining_markets.feature_families.news import NEWS_FEATURE_NAMES
 from explaining_markets.feature_families.peer_sympathy import PEER_FEATURE_NAMES
 from explaining_markets.feature_families.price_context import PRICE_CONTEXT_FEATURE_NAMES
+from explaining_markets.feature_families.reasoning import REASONING_FEATURE_NAMES
 from explaining_markets.feature_families.revenue_results import REVENUE_SURPRISE_FEATURE_NAMES
+from explaining_markets.features_v3 import FEATURE_SPEC_VERSION_V3, MODEL_FEATURE_NAMES_V3
+from explaining_markets.forward_looking_features import MODEL_FEATURE_NAMES
 from explaining_markets.point_in_time_audit_v3 import audit_feature_names
 
 TRAIN_QUARTER = "2025Q4"
@@ -49,11 +48,24 @@ PROMOTION_GATE = {
     "max_fraction_near_0_5": 0.90,
     "require_zero_leakage_violations": True,
     "require_all_tests_passing": True,
+    "require_local_feed_verified": True,
+    "require_modal_feed_verified": True,
+    "require_nonzero_news_coverage": True,
+    "require_reasoning_valid": True,
+    "require_latency_ok": True,
 }
 
 COMPANY_NEWS_NAMES = tuple(n for n in NEWS_FEATURE_NAMES if n.startswith("company_") or n == "has_company_news")
-PEER_SECTOR_NEWS_NAMES = tuple(n for n in NEWS_FEATURE_NAMES if n not in COMPANY_NEWS_NAMES)
-STRUCTURED_NAMES = tuple(n for n in MODEL_FEATURE_NAMES_V3 if n not in NEWS_FEATURE_NAMES)
+PEER_NEWS_NAMES = tuple(n for n in NEWS_FEATURE_NAMES if n.startswith("peer_") or n == "has_peer_news")
+SECTOR_NEWS_NAMES = tuple(n for n in NEWS_FEATURE_NAMES if n.startswith("sector_") or n == "has_sector_news")
+BASE_STRUCTURED_NAMES = tuple(n for n in MODEL_FEATURE_NAMES_V3 if n not in NEWS_FEATURE_NAMES and n not in REASONING_FEATURE_NAMES)
+ARTICLE_REASONING_NAMES = tuple(
+    n for n in REASONING_FEATURE_NAMES
+    if n in {
+        "reasoning_company_news_signal", "reasoning_peer_signal", "reasoning_sector_signal",
+        "reasoning_materiality", "reasoning_confidence", "has_reasoning",
+    }
+)
 
 ABLATIONS: dict[str, tuple[str, ...]] = {
     "v1_fls_only": MODEL_FEATURE_NAMES,
@@ -64,10 +76,16 @@ ABLATIONS: dict[str, tuple[str, ...]] = {
     "fls_plus_price_context": (*MODEL_FEATURE_NAMES, *PRICE_CONTEXT_FEATURE_NAMES),
     "fls_plus_market_sector": (*MODEL_FEATURE_NAMES, *MARKET_SECTOR_FEATURE_NAMES),
     "fls_plus_peers": (*MODEL_FEATURE_NAMES, *PEER_FEATURE_NAMES),
-    "fls_plus_company_news": (*MODEL_FEATURE_NAMES, *COMPANY_NEWS_NAMES),
-    "fls_plus_peer_sector_news": (*MODEL_FEATURE_NAMES, *PEER_SECTOR_NEWS_NAMES),
-    "all_structured_without_news": STRUCTURED_NAMES,
-    "all_signals_including_news": MODEL_FEATURE_NAMES_V3,
+    "v3_without_news": BASE_STRUCTURED_NAMES,
+    "company_news_only": (*BASE_STRUCTURED_NAMES, *COMPANY_NEWS_NAMES),
+    "company_peer_news": (*BASE_STRUCTURED_NAMES, *COMPANY_NEWS_NAMES, *PEER_NEWS_NAMES),
+    "company_peer_sector_news": (*BASE_STRUCTURED_NAMES, *NEWS_FEATURE_NAMES),
+    "peer_news_off": (*BASE_STRUCTURED_NAMES, *COMPANY_NEWS_NAMES, *SECTOR_NEWS_NAMES),
+    "peer_news_on": (*BASE_STRUCTURED_NAMES, *NEWS_FEATURE_NAMES),
+    "v3_deterministic_news": (*BASE_STRUCTURED_NAMES, *NEWS_FEATURE_NAMES),
+    "v3_article_reasoning": (*BASE_STRUCTURED_NAMES, *NEWS_FEATURE_NAMES, *ARTICLE_REASONING_NAMES),
+    "v3_event_reasoning": (*BASE_STRUCTURED_NAMES, *NEWS_FEATURE_NAMES, *REASONING_FEATURE_NAMES),
+    "full_v3": MODEL_FEATURE_NAMES_V3,
 }
 
 
@@ -166,10 +184,10 @@ def surprise_incremental_r2(rows: list[V3TrainingRow], predicted) -> dict[str, f
     }
 
 
-def _fit_predict(train, evaluate, names, kind, params):
+def _fit_predict(train, evaluate_rows, names, kind, params):
     X_train = np.asarray([r.x(names) for r in train], dtype=float)
     y_train = np.asarray([r.target_percentile for r in train], dtype=float)
-    X_eval = np.asarray([r.x(names) for r in evaluate], dtype=float)
+    X_eval = np.asarray([r.x(names) for r in evaluate_rows], dtype=float)
     means = X_train.mean(axis=0)
     stds = X_train.std(axis=0)
     stds[stds <= 1e-12] = 1.0
@@ -195,7 +213,16 @@ def _candidate_specs():
     yield "hist_gradient_boosting", {}
 
 
-def evaluate(rows: list[V3TrainingRow], *, tests_passing: bool = False) -> dict:
+def evaluate(
+    rows: list[V3TrainingRow],
+    *,
+    tests_passing: bool = False,
+    local_feed_verified: bool = False,
+    modal_feed_verified: bool = False,
+    news_coverage_nonzero: bool = False,
+    reasoning_valid: bool = False,
+    latency_ok: bool = False,
+) -> dict:
     audit_feature_names()
     if any(r.leakage_violations for r in rows):
         raise ValueError("V3 training rows contain point-in-time audit violations")
@@ -210,7 +237,6 @@ def evaluate(rows: list[V3TrainingRow], *, tests_passing: bool = False) -> dict:
 
     results = {"ablations": {}, "legacy_holdout_is_pristine": False}
     selected = None
-    selected_key = (-math.inf, -math.inf)
     for ablation, names in ABLATIONS.items():
         candidates = []
         for kind, params in _candidate_specs():
@@ -219,7 +245,7 @@ def evaluate(rows: list[V3TrainingRow], *, tests_passing: bool = False) -> dict:
             candidates.append({"kind": kind, "params": params, "metrics": asdict(metrics), "surprise_r2": surprise_incremental_r2(by_q[VALIDATION_QUARTER], pred)})
         best = max(candidates, key=lambda x: (-math.inf if x["metrics"]["pearson"] is None else x["metrics"]["pearson"], -x["metrics"]["mae"]))
         results["ablations"][ablation] = {"selected": best, "candidates": candidates}
-        if ablation == "all_signals_including_news":
+        if ablation == "full_v3":
             selected = best
 
     if selected is None:
@@ -254,6 +280,11 @@ def evaluate(rows: list[V3TrainingRow], *, tests_passing: bool = False) -> dict:
             "fraction_near_0_5": honest["metrics"]["fraction_between_048_052"],
             "zero_leakage_violations": True,
             "tests_passing": bool(tests_passing),
+            "local_feed_verified": bool(local_feed_verified),
+            "modal_feed_verified": bool(modal_feed_verified),
+            "news_coverage_nonzero": bool(news_coverage_nonzero),
+            "reasoning_valid": bool(reasoning_valid),
+            "latency_ok": bool(latency_ok),
         }
         promoted = bool(
             validation_gain >= PROMOTION_GATE["min_validation_pearson_gain_over_v1"]
@@ -262,6 +293,11 @@ def evaluate(rows: list[V3TrainingRow], *, tests_passing: bool = False) -> dict:
             and honest["metrics"]["prediction_std"] >= PROMOTION_GATE["min_prediction_std"]
             and honest["metrics"]["fraction_between_048_052"] <= PROMOTION_GATE["max_fraction_near_0_5"]
             and tests_passing
+            and local_feed_verified
+            and modal_feed_verified
+            and news_coverage_nonzero
+            and reasoning_valid
+            and latency_ok
         )
     results["promotion_gate"] = PROMOTION_GATE
     results["promoted"] = promoted
@@ -286,7 +322,7 @@ def serialize_linear_artifact(rows: list[V3TrainingRow], evaluation: dict, artif
         model = ElasticNet(alpha=selected["params"]["alpha"], l1_ratio=selected["params"]["l1_ratio"], max_iter=20000).fit(Z, y)
     artifact = {
         "model_version": MODEL_VERSION,
-        "feature_spec_version": "v3",
+        "feature_spec_version": FEATURE_SPEC_VERSION_V3,
         "feature_names": list(MODEL_FEATURE_NAMES_V3),
         "means": [float(x) for x in means],
         "standard_deviations": [float(x) for x in stds],
