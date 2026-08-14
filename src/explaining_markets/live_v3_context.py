@@ -108,9 +108,9 @@ def build_live_v3_context(*, ticker: str, event: dict, cutoff, providers: V3Prov
     sector_name = metadata.sector if metadata is not None else event.get("sector")
     sector_raw = _safe(receipts, "news.sector", lambda: providers.news.sector_news(sector_name, cutoff, days=7), ()) if sector_name else ()
 
-    company_ranked = rank_news(company_raw, cutoff, targets={ticker}, top_n=10)
-    peer_ranked = rank_news(peer_raw, cutoff, targets=set(peer_names), top_n=10) if peer_names else ()
-    sector_ranked = rank_news(sector_raw, cutoff, targets=set(peer_names) | {ticker}, top_n=8) if sector_raw else ()
+    company_ranked = rank_news(company_raw, cutoff, targets={ticker}, top_n=10, require_target=True)
+    peer_ranked = rank_news(peer_raw, cutoff, targets=set(peer_names), top_n=10, require_target=True) if peer_names else ()
+    sector_ranked = rank_news(sector_raw, cutoff, targets=set(), top_n=8, require_target=False) if sector_raw else ()
 
     reasoned_company = providers.article_reasoner.reason_many(company_ranked, relation="company")
     reasoned_peers = providers.article_reasoner.reason_many(peer_ranked, relation="peer")
