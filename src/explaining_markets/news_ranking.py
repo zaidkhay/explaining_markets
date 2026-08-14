@@ -102,27 +102,43 @@ def materiality_score(record: NewsRecord) -> float:
     return _clip(0.30 + 0.16 * hits)
 
 
-def relevance_score(record: NewsRecord, *, targets: set[str]) -> float:
+def relevance_score(record: NewsRecord, *, targets: set[str], broad_topic: bool = False) -> float:
     entities = {entity.upper() for entity in record.entities}
-    target_hits = len(entities.intersection({x.upper() for x in targets}))
+    normalized_targets = {x.upper() for x in targets}
+    target_hits = len(entities.intersection(normalized_targets))
     vendor = getattr(record, "vendor_relevance", None)
-    base = float(vendor) if vendor is not None else (0.85 if target_hits else 0.35)
+    if broad_topic:
+        base = float(vendor) if vendor is not None else 0.60
+    else:
+        base = float(vendor) if vendor is not None else (0.85 if target_hits else 0.10)
     if target_hits:
         base = max(base, min(1.0, 0.75 + 0.08 * target_hits))
     return _clip(base)
 
 
-def rank_news(records, cutoff, *, targets: set[str], days: int = 7, top_n: int = 12) -> tuple[RankedNewsRecord, ...]:
+def rank_news(
+    records,
+    cutoff,
+    *,
+    targets: set[str],
+    days: int = 7,
+    top_n: int = 12,
+    require_target: bool = True,
+) -> tuple[RankedNewsRecord, ...]:
     rows = deduplicate_news(records, cutoff, days=days)
     ranked: list[RankedNewsRecord] = []
     seen_titles: list[str] = []
+    normalized_targets = {x.upper() for x in targets}
     for row in sorted(rows, key=lambda r: r.published_at, reverse=True):
+        entities = {x.upper() for x in row.entities}
+        if require_target and normalized_targets and not entities.intersection(normalized_targets):
+            continue
         title = normalized_title(row)
         max_similarity = max((SequenceMatcher(None, title, prior).ratio() for prior in seen_titles), default=0.0)
         novelty = _clip(1.0 - 0.75 * max_similarity)
         age_hours = max(0.0, (cutoff - row.published_at).total_seconds() / 3600.0)
         recency = math.exp(-age_hours / 72.0)
-        relevance = relevance_score(row, targets=targets)
+        relevance = relevance_score(row, targets=targets, broad_topic=not require_target)
         materiality = materiality_score(row)
         quality = source_quality(row)
         priority = relevance * materiality * novelty * quality * recency
