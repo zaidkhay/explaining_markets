@@ -5,9 +5,18 @@ import json
 import math
 from pathlib import Path
 
-from explaining_markets.features_v3 import FeatureVectorV3, MODEL_FEATURE_NAMES_V3
+from explaining_markets.features_v3 import FEATURE_SPEC_VERSION_V3, FeatureVectorV3, MODEL_FEATURE_NAMES_V3
 
 DEFAULT_V3_ARTIFACT_PATH = Path(__file__).with_name("artifacts") / "multi_signal_v3.json"
+_REQUIRED_PROMOTION_EVIDENCE = (
+    "zero_leakage_violations",
+    "tests_passing",
+    "local_feed_verified",
+    "modal_feed_verified",
+    "news_coverage_nonzero",
+    "reasoning_valid",
+    "latency_ok",
+)
 
 
 class MultiSignalV3Model:
@@ -15,6 +24,7 @@ class MultiSignalV3Model:
         self.artifact_path = Path(artifact_path) if artifact_path else DEFAULT_V3_ARTIFACT_PATH
         raw = json.loads(self.artifact_path.read_text(encoding="utf-8"))
         self.model_version = str(raw["model_version"])
+        self.feature_spec_version = str(raw.get("feature_spec_version") or "")
         self.feature_names = tuple(str(x) for x in raw["feature_names"])
         self.means = tuple(float(x) for x in raw["means"])
         self.standard_deviations = tuple(float(x) for x in raw["standard_deviations"])
@@ -28,6 +38,8 @@ class MultiSignalV3Model:
         self._validate()
 
     def _validate(self) -> None:
+        if self.feature_spec_version != FEATURE_SPEC_VERSION_V3:
+            raise ValueError("V3 artifact feature-spec version does not match production extractor")
         if self.feature_names != MODEL_FEATURE_NAMES_V3:
             raise ValueError("V3 artifact feature order does not match MODEL_FEATURE_NAMES_V3")
         n = len(self.feature_names)
@@ -40,6 +52,11 @@ class MultiSignalV3Model:
             raise ValueError("V3 artifact standard deviations must be positive")
         if not (0 <= self.clip_lower < self.clip_upper <= 1):
             raise ValueError("V3 artifact clip bounds are invalid")
+        if self.promoted:
+            observed = dict(self.training_metadata.get("promotion_observed") or {})
+            missing = [name for name in _REQUIRED_PROMOTION_EVIDENCE if not observed.get(name)]
+            if missing:
+                raise ValueError(f"promoted V3 artifact lacks required promotion evidence: {missing}")
 
     def predict_vector(self, vector: FeatureVectorV3) -> float:
         raw = vector.vector(self.feature_names)
