@@ -47,6 +47,9 @@ def _run_enrichment(args, *, max_api_calls: int, include_news: bool):
         include_historical_news=include_news,
         news_chunk_days=args.news_chunk_days,
         reasoning_mode=args.reasoning_mode,
+        request_timeout=args.request_timeout,
+        request_retries=args.request_retries,
+        progress_every=args.progress_every,
     )
 
 
@@ -59,6 +62,9 @@ def main() -> int:
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("--earnings-api-calls", type=int, default=19, help="Alpha calls reserved for historical EARNINGS/cache progress")
     parser.add_argument("--news-api-calls", type=int, default=6, help="Alpha calls reserved for historical NEWS_SENTIMENT/cache progress")
+    parser.add_argument("--request-timeout", type=float, default=8.0, help="per-request Alpha Vantage timeout in seconds")
+    parser.add_argument("--request-retries", type=int, default=0, help="retries per uncached Alpha request; each attempt consumes budget")
+    parser.add_argument("--progress-every", type=int, default=500, help="print row progress every N rows; 0 disables row progress")
     parser.add_argument("--price-csv", type=Path, default=None, help="bulk adjusted daily CSV with ticker,date,close[,volume,available_at,source]")
     parser.add_argument("--alpha-adjusted-prices", action="store_true", help="try premium TIME_SERIES_DAILY_ADJUSTED when entitled")
     parser.add_argument("--no-news", action="store_true")
@@ -72,6 +78,12 @@ def main() -> int:
 
     if args.earnings_api_calls < 0 or args.news_api_calls < 0:
         parser.error("API call budgets must be non-negative")
+    if args.request_timeout <= 0:
+        parser.error("--request-timeout must be positive")
+    if args.request_retries < 0:
+        parser.error("--request-retries must be non-negative")
+    if args.progress_every < 0:
+        parser.error("--progress-every must be non-negative")
 
     # Phase 1 prioritizes EARNINGS. Successful responses are cached by ticker,
     # so repeated runs naturally advance to the next uncached companies.
