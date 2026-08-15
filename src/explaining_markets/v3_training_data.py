@@ -10,9 +10,7 @@ post-event outcomes. This module keeps those roles separate:
 
 The archive-only builder is intentionally a *seed* dataset. It can populate
 FLS and prior-company-reaction history without fabricating unavailable EPS,
-revenue, guidance, price, peer, news, or reasoning history. Richer historical
-V3 snapshots can later replace/augment these rows, but sparse archive-only
-rows are never silently presented as a fully populated V3 dataset.
+revenue, guidance, price, peer, news, or reasoning history.
 """
 from __future__ import annotations
 
@@ -35,9 +33,6 @@ from explaining_markets.v3_training import V3TrainingRow
 
 DEFAULT_ROWS_PATH = Path(__file__).resolve().parents[2] / "data" / "processed" / "v3_training_rows.jsonl.gz"
 DEFAULT_EVENT_TYPES = ("EARNINGS_RELEASE",)
-# CAR1 for a prior event is conservatively treated as usable two calendar days
-# later. Earnings events for the same issuer are normally months apart, so this
-# avoids assuming same-day realization while retaining safe history.
 PRIOR_REACTION_AVAILABILITY_LAG = timedelta(days=2)
 
 FAMILY_AVAILABILITY_FIELDS = {
@@ -90,21 +85,14 @@ def _key(event: HistoricalEvent) -> tuple[str, str]:
     return event.event_id, event.ticker
 
 
-def _quarter_percentiles(
-    events: Iterable[HistoricalEvent],
-    *,
-    attr: str,
-) -> dict[tuple[str, str], float]:
+def _quarter_percentiles(events: Iterable[HistoricalEvent], *, attr: str) -> dict[tuple[str, str], float]:
     groups: dict[str, list[HistoricalEvent]] = {}
     for event in events:
-        if not event.quarter or getattr(event, attr) is None:
-            continue
-        groups.setdefault(event.quarter, []).append(event)
-
+        if event.quarter and getattr(event, attr) is not None:
+            groups.setdefault(event.quarter, []).append(event)
     out: dict[tuple[str, str], float] = {}
     for group in groups.values():
-        values = [float(getattr(event, attr)) for event in group]
-        ranks = percentile_ranks(values)
+        ranks = percentile_ranks([float(getattr(event, attr)) for event in group])
         for event, rank in zip(group, ranks, strict=True):
             out[_key(event)] = float(rank)
     return out
@@ -162,10 +150,9 @@ def build_archive_seed_rows(
 ) -> list[V3TrainingRow]:
     """Build leakage-safe archive seed rows for V3 research.
 
-    Labels are ranked against *all labeled competition observations in the
-    quarter* before any event-type filtering, matching the competition target.
-    Inputs for the focal event use only disclosure plus prior same-ticker
-    realized reactions that were conservatively available before its cutoff.
+    Labels are ranked against all labeled competition observations in the
+    quarter before event-type filtering. Focal-event inputs use only disclosure
+    plus prior same-ticker reactions that were available before the cutoff.
     """
     loaded = list(events) if events is not None else load_historical_events(source)
     labeled = labeled_events(loaded)
@@ -175,24 +162,22 @@ def build_archive_seed_rows(
     by_ticker: dict[str, list[HistoricalEvent]] = {}
     for event in loaded:
         by_ticker.setdefault(event.ticker, []).append(event)
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
     for timeline in by_ticker.values():
-        timeline.sort(key=lambda event: _parse_dt(event.event_datetime) or datetime.min.replace(tzinfo=timezone.utc))
+        timeline.sort(key=lambda event: _parse_dt(event.event_datetime) or epoch)
 
     retrieved_at = datetime.now(timezone.utc)
-    rows: list[V3TrainingRow] = []
     allowed = set(event_types)
+    rows: list[V3TrainingRow] = []
     for event in labeled:
         if allowed and event.event_type not in allowed:
             continue
         if not event.quarter:
             continue
         cutoff = _parse_dt(event.event_datetime)
-        if cutoff is None:
-            continue
         target = targets.get(_key(event))
-        if target is None:
+        if cutoff is None or target is None:
             continue
-
         context = V3Context(
             ticker=event.ticker,
             cutoff=cutoff,
@@ -227,27 +212,26 @@ def training_data_report(rows: list[V3TrainingRow], *, archive_seed_only: bool =
     for row in rows:
         quarter_counts[row.quarter] = quarter_counts.get(row.quarter, 0) + 1
 
-    family_coverage: dict[str, float] = {}
-    for family, field in FAMILY_AVAILABILITY_FIELDS.items():
-        family_coverage[family] = (
+    family_coverage = {
+        family: (
             sum(float(row.values.get(field, 0.0)) > 0.0 for row in rows) / len(rows)
             if rows else 0.0
         )
-
+        for family, field in FAMILY_AVAILABILITY_FIELDS.items()
+    }
     non_fls = [name for name in MODEL_FEATURE_NAMES_V3 if name not in MODEL_FEATURE_NAMES]
-    variable: list[str] = []
-    for name in non_fls:
-        values = [float(row.values[name]) for row in rows]
-        if len(values) >= 2 and pstdev(values) > 1e-12:
-            variable.append(name)
-
+    variable = tuple(
+        name
+        for name in non_fls
+        if len(rows) >= 2 and pstdev([float(row.values[name]) for row in rows]) > 1e-12
+    )
     targets = [float(row.target_percentile) for row in rows]
     return TrainingDataReport(
         rows=len(rows),
         quarter_counts=dict(sorted(quarter_counts.items())),
         family_coverage=family_coverage,
         active_non_fls_features=len(variable),
-        non_fls_features_with_variance=tuple(variable),
+        non_fls_features_with_variance=variable,
         target_min=min(targets) if targets else None,
         target_max=max(targets) if targets else None,
         target_std=pstdev(targets) if len(targets) >= 2 else None,
@@ -257,6 +241,7 @@ def training_data_report(rows: list[V3TrainingRow], *, archive_seed_only: bool =
 
 def validate_training_rows(rows: list[V3TrainingRow]) -> None:
     seen: set[tuple[str, str]] = set()
+    expected = set(MODEL_FEATURE_NAMES_V3)
     for row in rows:
         key = (row.event_id, row.ticker)
         if key in seen:
@@ -268,12 +253,11 @@ def validate_training_rows(rows: list[V3TrainingRow]) -> None:
             raise ValueError(f"row {row.event_id}/{row.ticker} target is outside [0, 1]")
         if row.leakage_violations:
             raise ValueError(f"row {row.event_id}/{row.ticker} reports leakage violations")
-        if tuple(row.values) != MODEL_FEATURE_NAMES_V3:
-            missing = set(MODEL_FEATURE_NAMES_V3).difference(row.values)
-            extra = set(row.values).difference(MODEL_FEATURE_NAMES_V3)
+        actual = set(row.values)
+        if actual != expected:
             raise ValueError(
-                f"row {row.event_id}/{row.ticker} feature schema/order mismatch; "
-                f"missing={sorted(missing)} extra={sorted(extra)}"
+                f"row {row.event_id}/{row.ticker} feature schema mismatch; "
+                f"missing={sorted(expected - actual)} extra={sorted(actual - expected)}"
             )
         if not all(math.isfinite(float(value)) for value in row.values.values()):
             raise ValueError(f"row {row.event_id}/{row.ticker} contains non-finite features")
@@ -291,7 +275,9 @@ def write_training_rows(rows: list[V3TrainingRow], path: str | Path = DEFAULT_RO
     output.parent.mkdir(parents=True, exist_ok=True)
     with _open_text(output, "w") as fh:
         for row in rows:
-            fh.write(json.dumps(asdict(row), sort_keys=True) + "\n")
+            # Preserve the frozen feature order inside ``values`` for easier
+            # human inspection and reproducible diffs of generated rows.
+            fh.write(json.dumps(asdict(row)) + "\n")
     return output
 
 
@@ -307,12 +293,16 @@ def load_training_rows(path: str | Path = DEFAULT_ROWS_PATH) -> list[V3TrainingR
                 continue
             try:
                 raw = json.loads(text)
+                raw_values = raw["values"]
+                # Rebuild in frozen production order regardless of how an
+                # external JSON writer ordered object keys.
+                values = {name: float(raw_values[name]) for name in MODEL_FEATURE_NAMES_V3}
                 row = V3TrainingRow(
                     event_id=str(raw["event_id"]),
                     ticker=str(raw["ticker"]),
                     quarter=str(raw["quarter"]),
                     target_percentile=float(raw["target_percentile"]),
-                    values={name: float(value) for name, value in raw["values"].items()},
+                    values=values,
                     surprise_percentile=(
                         None if raw.get("surprise_percentile") is None
                         else float(raw["surprise_percentile"])
