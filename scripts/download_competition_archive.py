@@ -1,10 +1,8 @@
 """Download selected sealed competition archive files for offline training.
 
-Requires EM_API_KEY. No credentials are logged or persisted. The downloader
-accepts either production or beta API base URLs and stores only gzip JSONL
-files under the requested local directory.
+Requires EM_API_KEY. Credentials are loaded from `.env` when present and are
+never logged or persisted. Only sealed gzip JSONL archive files are written.
 """
-
 from __future__ import annotations
 
 import argparse
@@ -12,19 +10,29 @@ import os
 from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 
-QUARTERS = {"2025Q4", "2026Q1", "2026Q2"}
+from explaining_markets.config import DEFAULT_API_BASE_URL
+
+DEFAULT_QUARTERS = ("2025Q4", "2026Q1", "2026Q2")
 EVENT_TYPE = "EARNINGS_RELEASE"
 
 
-def download(base_url: str, destination: str | Path) -> list[Path]:
+def download(
+    base_url: str,
+    destination: str | Path,
+    *,
+    quarters: tuple[str, ...] = DEFAULT_QUARTERS,
+) -> list[Path]:
+    load_dotenv()
     api_key = os.environ.get("EM_API_KEY")
     if not api_key:
-        raise RuntimeError("EM_API_KEY is required")
+        raise RuntimeError("EM_API_KEY is required; add it to .env")
     dest = Path(destination)
     dest.mkdir(parents=True, exist_ok=True)
     headers = {"X-API-Key": api_key}
     base = base_url.rstrip("/")
+    requested = set(quarters)
 
     with httpx.Client(headers=headers, follow_redirects=True, timeout=120.0) as client:
         response = client.get(f"{base}/archive")
@@ -37,16 +45,16 @@ def download(base_url: str, destination: str | Path) -> list[Path]:
         selected = [
             item for item in files
             if item.get("event_type") == EVENT_TYPE
-            and item.get("quarter") in QUARTERS
+            and item.get("quarter") in requested
             and item.get("sealed") is not False
         ]
         found = {item.get("quarter") for item in selected}
-        missing = QUARTERS - found
+        missing = requested - found
         if missing:
             raise RuntimeError(f"sealed archive missing required quarters: {sorted(missing)}")
 
         paths: list[Path] = []
-        for item in sorted(selected, key=lambda x: x["quarter"]):
+        for item in sorted(selected, key=lambda value: value["quarter"]):
             quarter = item["quarter"]
             url = item.get("url")
             if not url:
@@ -67,11 +75,21 @@ def download(base_url: str, destination: str | Path) -> list[Path]:
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", default=os.environ.get("EM_API_BASE_URL", "https://api-beta.explainingmarkets.ai/v1"))
+    parser.add_argument(
+        "--base-url",
+        default=os.environ.get("EM_API_BASE_URL", DEFAULT_API_BASE_URL),
+    )
     parser.add_argument("--dest", default="data/historical")
+    parser.add_argument(
+        "--quarters",
+        default=",".join(DEFAULT_QUARTERS),
+        help="comma-separated sealed quarters to download",
+    )
     args = parser.parse_args()
-    paths = download(args.base_url, args.dest)
+    quarters = tuple(value.strip() for value in args.quarters.split(",") if value.strip())
+    paths = download(args.base_url, args.dest, quarters=quarters)
     print(f"downloaded {len(paths)} sealed quarter files")
 
 
