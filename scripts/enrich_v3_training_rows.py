@@ -85,17 +85,22 @@ def main() -> int:
     if args.progress_every < 0:
         parser.error("--progress-every must be non-negative")
 
-    # Phase 1 prioritizes EARNINGS. Successful responses are cached by ticker,
-    # so repeated runs naturally advance to the next uncached companies.
     earnings_report = _run_enrichment(
         args,
         max_api_calls=args.earnings_api_calls,
         include_news=False,
     )
 
-    # Phase 2 spends only the separate news budget. It rebuilds the rows using
-    # all cached earnings plus newly cached broad historical news windows.
-    if not args.no_news and args.news_api_calls > 0:
+    if earnings_report.alpha_blocked_reason:
+        print(
+            "[V3_ENRICH] Alpha provider is blocked for this run; skipping news phase and using cache-only data.",
+            flush=True,
+        )
+        report = earnings_report
+        total_calls = earnings_report.alpha_api_calls
+        total_hits = earnings_report.cache_hits
+        blocked_reason = earnings_report.alpha_blocked_reason
+    elif not args.no_news and args.news_api_calls > 0:
         report = _run_enrichment(
             args,
             max_api_calls=args.news_api_calls,
@@ -103,10 +108,12 @@ def main() -> int:
         )
         total_calls = earnings_report.alpha_api_calls + report.alpha_api_calls
         total_hits = earnings_report.cache_hits + report.cache_hits
+        blocked_reason = report.alpha_blocked_reason
     else:
         report = earnings_report
         total_calls = earnings_report.alpha_api_calls
         total_hits = earnings_report.cache_hits
+        blocked_reason = earnings_report.alpha_blocked_reason
 
     print("=== V3 HISTORICAL ENRICHMENT ===")
     print(f"rows: {report.rows}")
@@ -116,6 +123,8 @@ def main() -> int:
     print(f"rows_with_prices: {report.rows_with_prices}")
     print(f"alpha_api_calls_this_run: {total_calls}")
     print(f"alpha_cache_hits_across_phases: {total_hits}")
+    if blocked_reason:
+        print(f"alpha_provider_blocked_reason: {blocked_reason}")
     print(f"output: {report.output_path}")
     print("family_coverage:")
     for name, value in sorted(report.family_coverage.items()):
@@ -137,6 +146,7 @@ def main() -> int:
             {
                 **report.as_dict(),
                 "alpha_api_calls_this_run_total": total_calls,
+                "alpha_provider_blocked_reason": blocked_reason,
                 "coverage_gate_passed": passed,
                 "coverage_gate_failures": failures,
             },
