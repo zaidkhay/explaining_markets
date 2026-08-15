@@ -11,7 +11,6 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-import os
 import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -29,15 +28,37 @@ from explaining_markets.reasoning.event_reasoner import EventReasoner
 from explaining_markets.reasoning.news_reasoner import NewsReasoner
 from explaining_markets.v3_records import EarningsRecord, NewsRecord, PriceRecord, V3Context
 from explaining_markets.v3_training import V3TrainingRow
-from explaining_markets.v3_training_data import _parse_dt, _prior_company_history, load_training_rows, training_data_report, write_training_rows
+from explaining_markets.v3_training_data import (
+    _parse_dt,
+    _prior_company_history,
+    load_training_rows,
+    training_data_report,
+    write_training_rows,
+)
 
 _API_URL = "https://www.alphavantage.co/query"
 DEFAULT_CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "enrichment" / "v3"
 DEFAULT_ENRICHED_ROWS = Path(__file__).resolve().parents[2] / "data" / "processed" / "v3_training_rows_enriched.jsonl.gz"
 
+_REASONING_EVIDENCE_FIELDS = (
+    "has_eps_surprise",
+    "has_revenue_surprise",
+    "has_numeric_guidance",
+    "has_company_earnings_history",
+    "has_5y_price_history",
+    "has_peer_data",
+    "has_company_news",
+    "has_peer_news",
+    "has_sector_news",
+)
+
 
 class ApiBudgetExhausted(RuntimeError):
     pass
+
+
+class AlphaProviderBlocked(ApiBudgetExhausted):
+    """Raised when Alpha Vantage reports a run-wide quota/rate-limit block."""
 
 
 @dataclass(frozen=True)
@@ -51,6 +72,7 @@ class EnrichmentReport:
     cache_hits: int
     output_path: str
     family_coverage: dict[str, float]
+    alpha_blocked_reason: str | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -63,6 +85,7 @@ class EnrichmentReport:
             "cache_hits": self.cache_hits,
             "output_path": self.output_path,
             "family_coverage": self.family_coverage,
+            "alpha_blocked_reason": self.alpha_blocked_reason,
         }
 
 
@@ -82,44 +105,23 @@ def _quarter_bounds(quarter: str) -> tuple[datetime, datetime]:
     return start, end
 
 
-def _serialize_news(row: NewsRecord) -> dict:
-    return {
-        "value_timestamp": row.value_timestamp.isoformat(),
-        "available_at": row.available_at.isoformat(),
-        "retrieved_at": row.retrieved_at.isoformat(),
-        "source": row.source,
-        "headline": row.headline,
-        "published_at": row.published_at.isoformat(),
-        "entities": list(row.entities),
-        "url": row.url,
-        "source_id": row.source_id,
-        "sentiment": row.sentiment,
-        "material": row.material,
-        "topic": row.topic,
-        "summary": row.summary,
-        "excerpt": row.excerpt,
-        "vendor_relevance": row.vendor_relevance,
-    }
-
-
-def _deserialize_news(raw: dict) -> NewsRecord:
-    return NewsRecord(
-        value_timestamp=datetime.fromisoformat(raw["value_timestamp"]),
-        available_at=datetime.fromisoformat(raw["available_at"]),
-        retrieved_at=datetime.fromisoformat(raw["retrieved_at"]),
-        source=str(raw["source"]),
-        headline=str(raw["headline"]),
-        published_at=datetime.fromisoformat(raw["published_at"]),
-        entities=tuple(raw.get("entities") or ()),
-        url=raw.get("url"),
-        source_id=raw.get("source_id"),
-        sentiment=raw.get("sentiment"),
-        material=bool(raw.get("material", False)),
-        topic=raw.get("topic"),
-        summary=raw.get("summary"),
-        excerpt=raw.get("excerpt"),
-        vendor_relevance=raw.get("vendor_relevance"),
+def _is_run_wide_provider_block(message: str) -> bool:
+    text = message.lower()
+    tokens = (
+        "25 requests per day",
+        "requests per day",
+        "daily limit",
+        "daily request",
+        "rate limit",
+        "call frequency",
+        "standard api rate limit",
+        "api call frequency",
     )
+    return any(token in text for token in tokens)
+
+
+def _reasoning_has_evidence(values: dict[str, float]) -> bool:
+    return any(float(values.get(name, 0.0)) > 0.0 for name in _REASONING_EVIDENCE_FIELDS)
 
 
 class DiskJsonCache:
@@ -150,9 +152,9 @@ class AlphaHistoricalClient:
     """Resumable Alpha Vantage client with bounded attempts and hard timeouts.
 
     Every actual network attempt consumes the per-run budget, including a
-    timeout or transport failure. This prevents a slow endpoint from hanging a
-    backfill indefinitely while still allowing successful payloads to be
-    cached and reused on the next invocation.
+    timeout or transport failure. Provider messages that indicate a run-wide
+    daily/rate-limit block trip a circuit breaker so the remaining rows use
+    cache only instead of wasting requests on the same deterministic failure.
     """
 
     def __init__(
@@ -180,6 +182,7 @@ class AlphaHistoricalClient:
         self.api_calls = 0
         self.cache_hits = 0
         self.failures = 0
+        self.blocked_reason: str | None = None
         self._last_request_started: float | None = None
         self._owns_client = client is None
         self.client = client or httpx.Client(
@@ -209,6 +212,8 @@ class AlphaHistoricalClient:
         if cached is not None:
             self.cache_hits += 1
             return cached
+        if self.blocked_reason:
+            raise AlphaProviderBlocked(self.blocked_reason)
 
         last_error: Exception | None = None
         attempts = self.retries + 1
@@ -243,11 +248,20 @@ class AlphaHistoricalClient:
                 if note and not any(
                     key in payload for key in ("quarterlyEarnings", "feed", "Time Series (Daily)")
                 ):
-                    # API plan/quota errors are deterministic for this run; do
-                    # not waste retries on the same response.
-                    raise RuntimeError(str(note))
+                    message = " ".join(str(note).split())
+                    self.progress(
+                        f"[V3_ENRICH] Alpha provider message for {namespace}:{cache_key}: "
+                        f"{message[:500]}"
+                    )
+                    self.failures += 1
+                    if _is_run_wide_provider_block(message):
+                        self.blocked_reason = message
+                        raise AlphaProviderBlocked(message)
+                    raise RuntimeError(message)
                 self.cache.put(namespace, cache_key, payload)
                 return payload
+            except AlphaProviderBlocked:
+                raise
             except RuntimeError:
                 self.failures += 1
                 raise
@@ -265,7 +279,7 @@ class AlphaHistoricalClient:
                 last_error = exc
                 self.progress(
                     f"[V3_ENRICH] alpha request failed {namespace}:{cache_key} "
-                    f"{type(exc).__name__}; continuing"
+                    f"{type(exc).__name__}: {str(exc)[:300]}; continuing"
                 )
                 break
 
@@ -514,12 +528,13 @@ def enrich_training_rows(
         for start, end in _news_windows_for_quarters((row.quarter for row in seed_rows), news_chunk_days):
             try:
                 payload = alpha.broad_news_payload(start, end)
-            except ApiBudgetExhausted:
+            except ApiBudgetExhausted as exc:
+                print(f"[V3_ENRICH] stopping Alpha news phase: {str(exc)[:500]}", flush=True)
                 break
             except Exception as exc:
                 print(
                     f"[V3_ENRICH] skipping news window {start.date()}..{end.date()}: "
-                    f"{type(exc).__name__}",
+                    f"{type(exc).__name__}: {str(exc)[:300]}",
                     flush=True,
                 )
                 continue
@@ -549,13 +564,17 @@ def enrich_training_rows(
             if alpha is not None and not alpha_budget_exhausted:
                 try:
                     earnings = _match_earnings(alpha.earnings_payload(seed.ticker), event, cutoff)
-                except ApiBudgetExhausted:
+                except ApiBudgetExhausted as exc:
                     alpha_budget_exhausted = True
-                    print("[V3_ENRICH] Alpha budget exhausted; using cache-only for remaining rows", flush=True)
+                    print(
+                        f"[V3_ENRICH] Alpha unavailable; using cache-only for remaining rows: "
+                        f"{str(exc)[:500]}",
+                        flush=True,
+                    )
                 except Exception as exc:
                     print(
                         f"[V3_ENRICH] earnings unavailable ticker={seed.ticker} "
-                        f"error={type(exc).__name__}",
+                        f"error={type(exc).__name__}: {str(exc)[:300]}",
                         flush=True,
                     )
             elif alpha is not None:
@@ -571,9 +590,15 @@ def enrich_training_rows(
                     prices = _alpha_adjusted_prices(
                         alpha.adjusted_daily_payload(seed.ticker), seed.ticker, _utcnow()
                     )
-                except ApiBudgetExhausted:
+                except ApiBudgetExhausted as exc:
                     alpha_budget_exhausted = True
-                except Exception:
+                    print(f"[V3_ENRICH] stopping Alpha price phase: {str(exc)[:500]}", flush=True)
+                except Exception as exc:
+                    print(
+                        f"[V3_ENRICH] prices unavailable ticker={seed.ticker} "
+                        f"error={type(exc).__name__}: {str(exc)[:300]}",
+                        flush=True,
+                    )
                     prices = ()
             if prices:
                 rows_with_prices += 1
@@ -613,12 +638,15 @@ def enrich_training_rows(
                 extras={"training_source": "historical_v3_enrichment"},
             )
             preliminary = build_feature_vector_v3(disclosure=list(event.disclosure), context=base_context)
-            reasoning = event_reasoner.reason(
-                values=preliminary.values,
-                cutoff=cutoff,
-                company_news=reasoned,
-            )
-            final_context = replace(base_context, event_reasoning=reasoning)
+            if _reasoning_has_evidence(preliminary.values):
+                reasoning = event_reasoner.reason(
+                    values=preliminary.values,
+                    cutoff=cutoff,
+                    company_news=reasoned,
+                )
+                final_context = replace(base_context, event_reasoning=reasoning)
+            else:
+                final_context = base_context
             audit = audit_context(final_context)
             vector = build_feature_vector_v3(disclosure=list(event.disclosure), context=final_context)
             if vector.values.get("has_reasoning", 0.0):
@@ -650,4 +678,5 @@ def enrich_training_rows(
         cache_hits=alpha.cache_hits if alpha is not None else 0,
         output_path=str(output),
         family_coverage=coverage,
+        alpha_blocked_reason=alpha.blocked_reason if alpha is not None else None,
     )
