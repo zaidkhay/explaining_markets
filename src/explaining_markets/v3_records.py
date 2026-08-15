@@ -77,6 +77,9 @@ class NewsRecord(TimedRecord):
     sentiment: float | None = None
     material: bool = False
     topic: str | None = None
+    summary: str | None = None
+    excerpt: str | None = None
+    vendor_relevance: float | None = None
 
 
 @dataclass(frozen=True)
@@ -95,5 +98,9 @@ class V3Context:
     company_news: tuple[NewsRecord, ...] = ()
     peer_news: tuple[NewsRecord, ...] = ()
     sector_news: tuple[NewsRecord, ...] = ()
+    reasoned_company_news: tuple[Any, ...] = ()
+    reasoned_peer_news: tuple[Any, ...] = ()
+    reasoned_sector_news: tuple[Any, ...] = ()
+    event_reasoning: Any | None = None
     metadata: CompanyMetadataRecord | None = None
     extras: dict[str, Any] = field(default_factory=dict)

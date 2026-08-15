@@ -12,13 +12,7 @@ from datetime import datetime, timezone
 import httpx
 
 from explaining_markets.features import extract_features
-from explaining_markets.model import (
-    BaselineModel,
-    CompanyHistoryRidgeModel,
-    ForwardLookingRidgeModel,
-    HeuristicFactModel,
-    get_default_model,
-)
+from explaining_markets.model import BaselineModel, CompanyHistoryRidgeModel, ForwardLookingRidgeModel, HeuristicFactModel, get_default_model
 
 _FETCH_TIMEOUT_SECONDS = 20.0
 _history_provider_cache: list = []
@@ -75,6 +69,7 @@ def predict(event: dict) -> list[dict]:
             event_type=str(event.get("event_type") or "UNKNOWN"),
             disclosure=disclosure,
             cutoff=cutoff,
+            event=event,
             information_url_fetch_success=fetch_success,
         )
         out.append({"identifier_value": ticker, "predicted_percentile": float(prediction)})
@@ -83,7 +78,7 @@ def predict(event: dict) -> list[dict]:
 
 def _predict_one(
     *, model, ticker: str, event_type: str, disclosure: list[str], cutoff=None,
-    information_url_fetch_success: bool = True,
+    event: dict | None = None, information_url_fetch_success: bool = True,
 ) -> float:
     try:
         from explaining_markets.model_v3 import MultiSignalV3Model
@@ -92,31 +87,58 @@ def _predict_one(
 
     if MultiSignalV3Model and isinstance(model, MultiSignalV3Model):
         try:
-            from explaining_markets.cached_v3_context import context_from_existing_cache
+            from explaining_markets.evidence_bundle import persist_evidence_bundle
             from explaining_markets.features_v3 import build_feature_vector_v3, family_availability
+            from explaining_markets.live_v3_context import build_live_v3_context, feed_diagnostics
             from explaining_markets.point_in_time_audit_v3 import audit_context
+            from explaining_markets.providers.live_context import default_provider_bundle_from_env
 
             actual_cutoff = cutoff or datetime.now(timezone.utc)
-            context = context_from_existing_cache(ticker, actual_cutoff)
-            audit_context(context)
+            live_event = dict(event or {})
+            live_event["disclosure"] = list(disclosure)
+            providers = default_provider_bundle_from_env()
+            context = build_live_v3_context(ticker=ticker, event=live_event, cutoff=actual_cutoff, providers=providers)
+            audit = audit_context(context)
             vector = build_feature_vector_v3(disclosure=disclosure, context=context)
             prediction = model.predict_vector(vector)
             availability = family_availability(vector)
-            unavailable = ",".join(name for name, value in availability.items() if not value) or "none"
+            feed = feed_diagnostics(context)
             print(
-                "[PREDICT] "
-                f"ticker={ticker} model={model.model_version} "
-                f"unavailable_families={unavailable} "
-                f"eps_surprise_pct={vector.values['eps_surprise_percent']:.4f} "
-                f"revenue_surprise_pct={vector.values['revenue_surprise_percent']:.4f} "
-                f"guidance_vs_consensus={vector.values['guidance_surprise_percent']:.4f} "
-                f"prior_earnings_count={vector.values['prior_earnings_count']:.0f} "
-                f"return_20d={vector.values['return_20d']:.4f} "
-                f"prediction={prediction:.4f}"
+                "[V3_FEED] "
+                f"ticker={ticker} cutoff={actual_cutoff.isoformat()} "
+                f"earnings_received={feed['earnings_received']} revenue_received={feed['revenue_received']} "
+                f"guidance_received={feed['guidance_received']} price_rows={feed['price_rows']} "
+                f"peer_count={feed['peer_count']} company_news_count={feed['company_news_count']} "
+                f"peer_news_count={feed['peer_news_count']} sector_news_count={feed['sector_news_count']} "
+                f"reasoned_news_count={feed['reasoned_news_count']} cutoff_audit=PASS records_checked={audit.records_checked}"
             )
+            reasoning = context.event_reasoning
+            if reasoning is not None:
+                print(
+                    "[V3_REASONING] "
+                    f"ticker={ticker} earnings_quality={reasoning.earnings_quality:.3f} "
+                    f"revenue_quality={reasoning.revenue_quality:.3f} guidance_quality={reasoning.guidance_quality:.3f} "
+                    f"expectations_gap={reasoning.expectations_gap:.3f} priced_in_score={reasoning.priced_in_score:.3f} "
+                    f"company_news_signal={reasoning.company_news_signal:.3f} peer_signal={reasoning.peer_signal:.3f} "
+                    f"sector_signal={reasoning.sector_signal:.3f} contradiction_score={reasoning.contradiction_score:.3f} "
+                    f"overall_event_signal={reasoning.overall_event_signal:.3f} materiality={reasoning.materiality:.3f} "
+                    f"confidence={reasoning.confidence:.3f}"
+                )
+            unavailable = ",".join(name for name, value in availability.items() if not value) or "none"
+            print(f"[V3_PREDICT] ticker={ticker} model={model.model_version} prediction={prediction:.4f} fallback=none unavailable_families={unavailable}")
+            try:
+                persist_evidence_bundle(
+                    context=context,
+                    vector=vector,
+                    event_id=str(live_event.get("event_id") or live_event.get("id") or "unknown"),
+                    model_version=model.model_version,
+                    prediction=prediction,
+                )
+            except Exception as evidence_exc:
+                print(f"[V3_EVIDENCE] ticker={ticker} status=error error={type(evidence_exc).__name__}")
             return _bounded(prediction)
         except Exception as exc:
-            print(f"[PREDICT] ticker={ticker} V3 failed: {type(exc).__name__}; falling back to fls_ridge_v1")
+            print(f"[V3_PREDICT] ticker={ticker} fallback=fls_ridge_v1 error={type(exc).__name__}")
             try:
                 model = ForwardLookingRidgeModel()
             except Exception as v1_exc:
@@ -181,10 +203,7 @@ def _predict_one(
         try:
             features = extract_features(ticker=ticker, event_type=event_type, disclosure=disclosure)
             prediction = model.predict_percentile(features)
-            print(
-                f"[PREDICT] ticker={ticker} model=heuristic_fact "
-                f"net_sentiment={features.net_sentiment} prediction={prediction:.4f}"
-            )
+            print(f"[PREDICT] ticker={ticker} model=heuristic_fact net_sentiment={features.net_sentiment} prediction={prediction:.4f}")
             return _bounded(prediction)
         except Exception as exc:
             print(f"[PREDICT] ticker={ticker} heuristic failed: {type(exc).__name__}; using baseline")

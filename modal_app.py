@@ -1,17 +1,12 @@
 """Modal deployment for the Explaining Markets starter.
 
-This is plumbing — you shouldn't need to edit it. It defines a small FastAPI app
-and deploys it as a persistent, public web endpoint:
-
-    GET  /    health check
-    POST /    receive a signed event, verify, ACK, then predict and submit
-              (POST /competition/webhook is kept as an alias of the same handler)
-
-The webhook is served at the root path on purpose: the URL Modal prints on deploy
-*is* your webhook URL — paste it into the portal as-is, nothing to append.
+This is orchestration only: verify/ACK/dedupe/spawn, prediction, submission,
+and a non-public V3 feed diagnostic. Business logic stays under
+``src/explaining_markets``.
 
 Deploy:    uv run modal deploy modal_app.py
 Dev/local: uv run modal serve modal_app.py
+Diagnostic: uv run modal run modal_app.py::check_v3_feed --ticker AAPL
 """
 
 import modal
@@ -21,13 +16,11 @@ app = modal.App("explaining-markets-starter")
 image = (
     modal.Image.debian_slim()
     .pip_install("fastapi[standard]", "httpx", "openai", "pydantic")
-    # Modal's default add_local_python_source filter keeps only Python files.
-    # Override it so the serialized fls_ridge_v1.json artifact is mounted with
-    # the package and pure-Python production inference can load it at runtime.
     .add_local_python_source("explaining_markets", "predict", ignore=[])
 )
 
 seen_webhooks = modal.Dict.from_name("em-webhook-dedupe", create_if_missing=True)
+v3_data = modal.Volume.from_name("em-v3-data", create_if_missing=True)
 secrets = [modal.Secret.from_dotenv(".env")]
 
 
@@ -52,8 +45,13 @@ def _release(webhook_id, submitted):
         seen_webhooks.pop(webhook_id, None)
 
 
-@app.function(image=image, secrets=secrets, timeout=600, retries=0)
+@app.function(image=image, secrets=secrets, volumes={"/v3-data": v3_data}, timeout=600, retries=0)
 def predict_and_submit(event: dict, webhook_id: str | None = None):
+    import os
+
+    os.environ.setdefault("V3_HISTORY_CACHE_PATH", "/v3-data/company_history.sqlite")
+    os.environ.setdefault("V3_EVIDENCE_DIR", "/v3-data/evidence")
+
     from explaining_markets.client import submit_predictions
     from explaining_markets.config import Config
     from explaining_markets.event_utils import is_test, neutral_predictions
@@ -72,6 +70,46 @@ def predict_and_submit(event: dict, webhook_id: str | None = None):
         print(f"[ERROR] prediction failed for event {event.get('event_id')}: {exc}")
     finally:
         _release(webhook_id, submitted)
+
+
+@app.function(image=image, secrets=secrets, volumes={"/v3-data": v3_data}, timeout=120)
+def check_v3_feed(ticker: str):
+    """Non-public Modal diagnostic. Never prints credential values."""
+    import os
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    os.environ.setdefault("V3_HISTORY_CACHE_PATH", "/v3-data/company_history.sqlite")
+    os.environ.setdefault("V3_EVIDENCE_DIR", "/v3-data/evidence")
+
+    from explaining_markets.live_v3_context import build_live_v3_context, feed_diagnostics
+    from explaining_markets.point_in_time_audit_v3 import audit_context
+    from explaining_markets.providers.live_context import default_provider_bundle_from_env
+
+    ticker = ticker.upper()
+    cutoff = datetime.now(timezone.utc)
+    providers = default_provider_bundle_from_env()
+    event = {"event_id": f"modal-diagnostic-{ticker}", "disclosure": []}
+    context = build_live_v3_context(ticker=ticker, event=event, cutoff=cutoff, providers=providers)
+    audit = audit_context(context)
+    diag = feed_diagnostics(context)
+    result = {
+        "ticker": ticker,
+        "cutoff": cutoff.isoformat(),
+        "news_secret_configured": bool(os.getenv("ALPHAVANTAGE_API_KEY") or os.getenv("NEWS_API_KEY")),
+        "openai_secret_configured": bool(os.getenv("OPENAI_API_KEY")),
+        "historical_cache_mounted": Path(os.environ["V3_HISTORY_CACHE_PATH"]).exists(),
+        "company_news_count": diag["company_news_count"],
+        "peer_news_count": diag["peer_news_count"],
+        "sector_news_count": diag["sector_news_count"],
+        "peer_count": diag["peer_count"],
+        "reasoned_news_count": diag["reasoned_news_count"],
+        "structured_reasoning_returned": bool(context.event_reasoning),
+        "cutoff_audit": "PASS",
+        "records_checked": audit.records_checked,
+    }
+    print("[V3_MODAL_DIAGNOSTIC] " + " ".join(f"{key}={value}" for key, value in result.items()))
+    return result
 
 
 @app.function(image=image, secrets=secrets)
