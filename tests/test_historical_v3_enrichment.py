@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import httpx
+import pytest
+
 import explaining_markets.historical_v3_enrichment as enrichment
 from explaining_markets.features_v3 import build_feature_vector_v3
 from explaining_markets.historical import HistoricalEvent
 from explaining_markets.historical_v3_enrichment import (
+    AlphaHistoricalClient,
     DiskJsonCache,
     LocalDailyPriceStore,
     _match_earnings,
@@ -70,6 +74,51 @@ def test_disk_json_cache_round_trip(tmp_path):
     assert cache.get("earnings", "AAPL") is None
     cache.put("earnings", "AAPL", payload)
     assert cache.get("earnings", "AAPL") == payload
+
+
+def test_alpha_timeout_is_bounded_and_consumes_attempt_budget(tmp_path):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow vendor", request=request)
+
+    transport_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = AlphaHistoricalClient(
+        "test-key",
+        cache=DiskJsonCache(tmp_path),
+        max_api_calls=2,
+        timeout=0.5,
+        retries=1,
+        retry_backoff=0.0,
+        min_request_interval=0.0,
+        client=transport_client,
+        progress=lambda _message: None,
+    )
+    with pytest.raises(RuntimeError, match="ReadTimeout"):
+        client.earnings_payload("AAPL")
+    assert client.api_calls == 2
+    assert client.failures == 2
+    transport_client.close()
+
+
+def test_alpha_cache_hit_uses_zero_network_attempts(tmp_path):
+    cache = DiskJsonCache(tmp_path)
+    payload = {"quarterlyEarnings": [{"reportedDate": "2026-01-29"}]}
+    cache.put("earnings", "AAPL", payload)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("network should not be used on cache hit")
+
+    transport_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = AlphaHistoricalClient(
+        "test-key",
+        cache=cache,
+        max_api_calls=1,
+        client=transport_client,
+        progress=lambda _message: None,
+    )
+    assert client.earnings_payload("AAPL") == payload
+    assert client.api_calls == 0
+    assert client.cache_hits == 1
+    transport_client.close()
 
 
 def test_local_daily_price_store_loads_only_explicit_adjusted_input(tmp_path):
@@ -173,6 +222,7 @@ def test_enrichment_turns_on_eps_prices_and_reasoning_without_network(tmp_path, 
         price_csv=price_path,
         include_historical_news=False,
         reasoning_mode="deterministic",
+        progress_every=0,
     )
     enriched = load_training_rows(output_path)
     values = enriched[0].values
