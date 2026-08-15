@@ -33,6 +33,7 @@ data/historical/*
 data/processed/*
 data/company_history/*
 data/evidence/*
+data/enrichment/*
 !data/historical/.gitkeep
 !data/historical/README.md
 !data/historical/PROVENANCE.json
