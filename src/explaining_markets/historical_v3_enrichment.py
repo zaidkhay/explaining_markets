@@ -12,10 +12,11 @@ import csv
 import hashlib
 import json
 import os
+import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import httpx
 
@@ -146,40 +147,134 @@ class DiskJsonCache:
 
 
 class AlphaHistoricalClient:
-    """Resumable Alpha Vantage historical client with a hard per-run call budget."""
+    """Resumable Alpha Vantage client with bounded attempts and hard timeouts.
 
-    def __init__(self, api_key: str, *, cache: DiskJsonCache, max_api_calls: int = 25, timeout: float = 30.0) -> None:
+    Every actual network attempt consumes the per-run budget, including a
+    timeout or transport failure. This prevents a slow endpoint from hanging a
+    backfill indefinitely while still allowing successful payloads to be
+    cached and reused on the next invocation.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        cache: DiskJsonCache,
+        max_api_calls: int = 25,
+        timeout: float = 8.0,
+        retries: int = 0,
+        retry_backoff: float = 0.75,
+        min_request_interval: float = 0.75,
+        client: httpx.Client | None = None,
+        progress: Callable[[str], None] | None = None,
+    ) -> None:
         if not api_key:
             raise ValueError("ALPHAVANTAGE_API_KEY is required")
         self.api_key = api_key
         self.cache = cache
         self.max_api_calls = max(0, int(max_api_calls))
-        self.timeout = float(timeout)
+        self.timeout = max(0.5, float(timeout))
+        self.retries = max(0, int(retries))
+        self.retry_backoff = max(0.0, float(retry_backoff))
+        self.min_request_interval = max(0.0, float(min_request_interval))
         self.api_calls = 0
         self.cache_hits = 0
-        self.client = httpx.Client(timeout=httpx.Timeout(self.timeout, connect=self.timeout))
+        self.failures = 0
+        self._last_request_started: float | None = None
+        self._owns_client = client is None
+        self.client = client or httpx.Client(
+            timeout=httpx.Timeout(
+                connect=min(self.timeout, 5.0),
+                read=self.timeout,
+                write=self.timeout,
+                pool=self.timeout,
+            )
+        )
+        self.progress = progress or (lambda message: print(message, flush=True))
 
     def close(self) -> None:
-        self.client.close()
+        if self._owns_client:
+            self.client.close()
+
+    def _pace(self) -> None:
+        if self._last_request_started is None or self.min_request_interval <= 0:
+            return
+        elapsed = time.monotonic() - self._last_request_started
+        remaining = self.min_request_interval - elapsed
+        if remaining > 0:
+            time.sleep(remaining)
 
     def _cached_request(self, namespace: str, cache_key: str, params: dict[str, str]) -> dict:
         cached = self.cache.get(namespace, cache_key)
         if cached is not None:
             self.cache_hits += 1
             return cached
-        if self.api_calls >= self.max_api_calls:
-            raise ApiBudgetExhausted(f"Alpha Vantage per-run API budget exhausted ({self.max_api_calls})")
-        response = self.client.get(_API_URL, params={**params, "apikey": self.api_key})
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise RuntimeError("Alpha Vantage returned a non-object response")
-        note = payload.get("Information") or payload.get("Note") or payload.get("Error Message")
-        if note and not any(key in payload for key in ("quarterlyEarnings", "feed", "Time Series (Daily)")):
-            raise RuntimeError(str(note))
-        self.api_calls += 1
-        self.cache.put(namespace, cache_key, payload)
-        return payload
+
+        last_error: Exception | None = None
+        attempts = self.retries + 1
+        for attempt in range(1, attempts + 1):
+            if self.api_calls >= self.max_api_calls:
+                raise ApiBudgetExhausted(
+                    f"Alpha Vantage per-run API budget exhausted ({self.max_api_calls})"
+                )
+            self._pace()
+            self.api_calls += 1
+            self._last_request_started = time.monotonic()
+            self.progress(
+                f"[V3_ENRICH] alpha {namespace}:{cache_key} "
+                f"attempt={attempt}/{attempts} calls={self.api_calls}/{self.max_api_calls}"
+            )
+            try:
+                response = self.client.get(
+                    _API_URL,
+                    params={**params, "apikey": self.api_key},
+                    timeout=httpx.Timeout(
+                        connect=min(self.timeout, 5.0),
+                        read=self.timeout,
+                        write=self.timeout,
+                        pool=self.timeout,
+                    ),
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    raise RuntimeError("Alpha Vantage returned a non-object response")
+                note = payload.get("Information") or payload.get("Note") or payload.get("Error Message")
+                if note and not any(
+                    key in payload for key in ("quarterlyEarnings", "feed", "Time Series (Daily)")
+                ):
+                    # API plan/quota errors are deterministic for this run; do
+                    # not waste retries on the same response.
+                    raise RuntimeError(str(note))
+                self.cache.put(namespace, cache_key, payload)
+                return payload
+            except RuntimeError:
+                self.failures += 1
+                raise
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                self.failures += 1
+                last_error = exc
+                self.progress(
+                    f"[V3_ENRICH] alpha request failed {namespace}:{cache_key} "
+                    f"{type(exc).__name__}; continuing"
+                )
+                if attempt < attempts and self.retry_backoff > 0:
+                    time.sleep(self.retry_backoff * attempt)
+            except (httpx.HTTPStatusError, ValueError) as exc:
+                self.failures += 1
+                last_error = exc
+                self.progress(
+                    f"[V3_ENRICH] alpha request failed {namespace}:{cache_key} "
+                    f"{type(exc).__name__}; continuing"
+                )
+                break
+
+        if last_error is not None:
+            raise RuntimeError(
+                f"Alpha Vantage request failed for {namespace}:{cache_key}: "
+                f"{type(last_error).__name__}"
+            ) from last_error
+        raise RuntimeError(f"Alpha Vantage request failed for {namespace}:{cache_key}")
 
     def earnings_payload(self, ticker: str) -> dict:
         ticker = ticker.upper()
@@ -217,8 +312,9 @@ class LocalDailyPriceStore:
     """Bulk daily-price CSV reader.
 
     Required columns: ticker,date,close. Optional: volume,available_at,source.
-    Dates are interpreted at 23:59 UTC unless an explicit available_at is supplied.
-    The caller is responsible for supplying split/dividend-adjusted close values.
+    Dates are interpreted at the configured market-close timestamp unless an
+    explicit available_at is supplied. The caller is responsible for supplying
+    split/dividend-adjusted close values.
     """
 
     def __init__(self, path: str | Path | None) -> None:
@@ -229,8 +325,7 @@ class LocalDailyPriceStore:
         if not source.exists():
             raise FileNotFoundError(source)
         rows: dict[str, list[PriceRecord]] = {}
-        opener = source.open
-        with opener("r", encoding="utf-8", newline="") as fh:
+        with source.open("r", encoding="utf-8", newline="") as fh:
             reader = csv.DictReader(fh)
             required = {"ticker", "date", "close"}
             if not reader.fieldnames or not required.issubset(reader.fieldnames):
@@ -254,7 +349,10 @@ class LocalDailyPriceStore:
                         volume=float(raw["volume"]) if raw.get("volume") else None,
                     )
                 )
-        self.by_ticker = {ticker: tuple(sorted(values, key=lambda r: r.value_timestamp)) for ticker, values in rows.items()}
+        self.by_ticker = {
+            ticker: tuple(sorted(values, key=lambda r: r.value_timestamp))
+            for ticker, values in rows.items()
+        }
 
     def prices(self, ticker: str) -> tuple[PriceRecord, ...]:
         return self.by_ticker.get(ticker.upper(), ())
@@ -336,7 +434,6 @@ def _normalize_broad_news(payload: dict, *, cutoff: datetime) -> tuple[NewsRecor
     feed = payload.get("feed")
     if not isinstance(feed, list):
         return ()
-    # Reuse the live provider's normalization logic without another network call.
     provider = AlphaVantageNewsProvider("offline-normalization-key")
     retrieved_at = _utcnow()
     rows = []
@@ -388,13 +485,26 @@ def enrich_training_rows(
     include_historical_news: bool = True,
     news_chunk_days: int = 7,
     reasoning_mode: str = "deterministic",
+    request_timeout: float = 8.0,
+    request_retries: int = 0,
+    progress_every: int = 500,
 ) -> EnrichmentReport:
     seed_rows = load_training_rows(rows_path)
     events = load_historical_events(historical_dir)
     event_map = _events_by_key(events)
     timelines = _timelines(events)
     cache = DiskJsonCache(cache_dir)
-    alpha = AlphaHistoricalClient(alpha_api_key, cache=cache, max_api_calls=max_api_calls) if alpha_api_key else None
+    alpha = (
+        AlphaHistoricalClient(
+            alpha_api_key,
+            cache=cache,
+            max_api_calls=max_api_calls,
+            timeout=request_timeout,
+            retries=request_retries,
+        )
+        if alpha_api_key
+        else None
+    )
     local_prices = LocalDailyPriceStore(price_csv)
     news_reasoner = NewsReasoner(use_openai=reasoning_mode == "openai")
     event_reasoner = EventReasoner(use_openai=reasoning_mode == "openai")
@@ -406,14 +516,26 @@ def enrich_training_rows(
                 payload = alpha.broad_news_payload(start, end)
             except ApiBudgetExhausted:
                 break
-            except Exception:
+            except Exception as exc:
+                print(
+                    f"[V3_ENRICH] skipping news window {start.date()}..{end.date()}: "
+                    f"{type(exc).__name__}",
+                    flush=True,
+                )
                 continue
             broad_news.extend(_normalize_broad_news(payload, cutoff=end))
 
     eps_matches = rows_with_news = rows_with_reasoning = rows_with_prices = 0
     enriched: list[V3TrainingRow] = []
+    alpha_budget_exhausted = False
     try:
-        for seed in seed_rows:
+        for index, seed in enumerate(seed_rows, start=1):
+            if progress_every > 0 and (index == 1 or index % progress_every == 0 or index == len(seed_rows)):
+                print(
+                    f"[V3_ENRICH] rows={index}/{len(seed_rows)} eps={eps_matches} "
+                    f"news={rows_with_news} prices={rows_with_prices}",
+                    flush=True,
+                )
             event = event_map.get((seed.event_id, seed.ticker))
             if event is None:
                 enriched.append(seed)
@@ -424,30 +546,53 @@ def enrich_training_rows(
                 continue
 
             earnings = None
-            if alpha is not None:
+            if alpha is not None and not alpha_budget_exhausted:
                 try:
                     earnings = _match_earnings(alpha.earnings_payload(seed.ticker), event, cutoff)
-                except (ApiBudgetExhausted, Exception):
-                    earnings = None
+                except ApiBudgetExhausted:
+                    alpha_budget_exhausted = True
+                    print("[V3_ENRICH] Alpha budget exhausted; using cache-only for remaining rows", flush=True)
+                except Exception as exc:
+                    print(
+                        f"[V3_ENRICH] earnings unavailable ticker={seed.ticker} "
+                        f"error={type(exc).__name__}",
+                        flush=True,
+                    )
+            elif alpha is not None:
+                cached = cache.get("earnings", seed.ticker.upper())
+                if cached is not None:
+                    earnings = _match_earnings(cached, event, cutoff)
             if earnings is not None:
                 eps_matches += 1
 
             prices = local_prices.prices(seed.ticker)
-            if not prices and use_alpha_adjusted_prices and alpha is not None:
+            if not prices and use_alpha_adjusted_prices and alpha is not None and not alpha_budget_exhausted:
                 try:
-                    prices = _alpha_adjusted_prices(alpha.adjusted_daily_payload(seed.ticker), seed.ticker, _utcnow())
-                except (ApiBudgetExhausted, Exception):
+                    prices = _alpha_adjusted_prices(
+                        alpha.adjusted_daily_payload(seed.ticker), seed.ticker, _utcnow()
+                    )
+                except ApiBudgetExhausted:
+                    alpha_budget_exhausted = True
+                except Exception:
                     prices = ()
             if prices:
                 rows_with_prices += 1
 
             company_news = tuple(
-                row for row in broad_news
+                row
+                for row in broad_news
                 if seed.ticker.upper() in {entity.upper() for entity in row.entities}
                 and row.published_at <= cutoff
                 and row.published_at >= cutoff - timedelta(days=7)
             )
-            ranked = rank_news(company_news, cutoff, targets={seed.ticker}, days=7, top_n=10, require_target=True)
+            ranked = rank_news(
+                company_news,
+                cutoff,
+                targets={seed.ticker},
+                days=7,
+                top_n=10,
+                require_target=True,
+            )
             reasoned = news_reasoner.reason_many(ranked, relation="company") if ranked else ()
             if ranked:
                 rows_with_news += 1
