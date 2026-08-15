@@ -15,7 +15,6 @@ outputs when informative inputs differ.
 from __future__ import annotations
 
 import json
-import math
 import os
 import tempfile
 from dataclasses import dataclass, replace
@@ -25,7 +24,12 @@ from statistics import mean, pstdev
 
 from dotenv import load_dotenv
 
-from explaining_markets.features_v3 import MODEL_FEATURE_NAMES_V3, build_feature_vector_v3, family_availability
+from explaining_markets.features_v3 import (
+    FEATURE_SPEC_VERSION_V3,
+    MODEL_FEATURE_NAMES_V3,
+    build_feature_vector_v3,
+    family_availability,
+)
 from explaining_markets.live_v3_context import build_live_v3_context, feed_diagnostics
 from explaining_markets.model_v3 import MultiSignalV3Model
 from explaining_markets.news_ranking import rank_news
@@ -161,7 +165,12 @@ def _price_series(ticker: str, cutoff: datetime, target_20d: float, *, sessions:
 
 def _history(ticker: str, cutoff: datetime) -> tuple[EarningsRecord, ...]:
     rows: list[EarningsRecord] = []
-    patterns = ((1.08, 1.00, 10.4, 10.0, 0.035), (0.94, 1.00, 9.7, 10.0, -0.025), (1.03, 1.00, 10.1, 10.0, 0.015), (0.98, 1.00, 9.9, 10.0, -0.008))
+    patterns = (
+        (1.08, 1.00, 10.4, 10.0, 0.035),
+        (0.94, 1.00, 9.7, 10.0, -0.025),
+        (1.03, 1.00, 10.1, 10.0, 0.015),
+        (0.98, 1.00, 9.9, 10.0, -0.008),
+    )
     for i in range(12):
         eps, eps_c, rev, rev_c, reaction = patterns[i % len(patterns)]
         stamp = cutoff - timedelta(days=90 * (i + 1))
@@ -235,18 +244,15 @@ def _base_context(spec: ScenarioSpec, *, cutoff: datetime) -> V3Context:
     company_news = _news(ticker, cutoff, spec.company_headline, spec.company_sentiment, source_id=f"company-{spec.name}")
     peer_news = _news("PEER", cutoff, spec.peer_headline, spec.peer_sentiment, source_id=f"peer-{spec.name}")
     sector_news = _news("SECTOR", cutoff, spec.sector_headline, spec.sector_sentiment, source_id=f"sector-{spec.name}")
-    stock = _price_series(ticker, cutoff, spec.return_20d_target)
-    market = _price_series("SPY", cutoff, 0.01)
-    sector = _price_series("XLK", cutoff, 0.015)
     return V3Context(
         ticker=ticker,
         cutoff=cutoff,
         earnings=earnings,
         guidance=guidance,
         company_history=_history(ticker, cutoff),
-        stock_prices=stock,
-        market_prices=market,
-        sector_prices=sector,
+        stock_prices=_price_series(ticker, cutoff, spec.return_20d_target),
+        market_prices=_price_series("SPY", cutoff, 0.01),
+        sector_prices=_price_series("XLK", cutoff, 0.015),
         company_news=company_news,
         peer_news=peer_news,
         sector_news=sector_news,
@@ -295,6 +301,7 @@ def _diagnostic_artifact(path: Path) -> None:
     })
     artifact = {
         "model_version": "v3_verification_diagnostic",
+        "feature_spec_version": FEATURE_SPEC_VERSION_V3,
         "feature_names": list(MODEL_FEATURE_NAMES_V3),
         "means": [0.0] * len(MODEL_FEATURE_NAMES_V3),
         "standard_deviations": [1.0] * len(MODEL_FEATURE_NAMES_V3),
@@ -405,7 +412,13 @@ def verify_openai_structured_output() -> dict[str, object]:
     }
 
 
-def verify_live_ticker(ticker: str, *, sector: str | None = None, sector_ticker: str | None = None, peers: tuple[str, ...] = ()) -> dict[str, object]:
+def verify_live_ticker(
+    ticker: str,
+    *,
+    sector: str | None = None,
+    sector_ticker: str | None = None,
+    peers: tuple[str, ...] = (),
+) -> dict[str, object]:
     load_dotenv()
     ticker = ticker.upper()
     cutoff = datetime.now(timezone.utc)
@@ -430,6 +443,7 @@ def verify_live_ticker(ticker: str, *, sector: str | None = None, sector_ticker:
 
     try:
         from explaining_markets.model import get_default_model
+
         production_model = get_default_model()
         production_model_name = getattr(production_model, "model_version", production_model.__class__.__name__)
         production_v3_selected = isinstance(production_model, MultiSignalV3Model) and bool(production_model.promoted)
