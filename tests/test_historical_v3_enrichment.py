@@ -10,6 +10,7 @@ from explaining_markets.features_v3 import build_feature_vector_v3
 from explaining_markets.historical import HistoricalEvent
 from explaining_markets.historical_v3_enrichment import (
     AlphaHistoricalClient,
+    AlphaProviderBlocked,
     DiskJsonCache,
     LocalDailyPriceStore,
     _match_earnings,
@@ -121,6 +122,38 @@ def test_alpha_cache_hit_uses_zero_network_attempts(tmp_path):
     transport_client.close()
 
 
+def test_alpha_daily_quota_message_trips_circuit_breaker(tmp_path):
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json={"Information": "Our standard API usage limit is 25 requests per day."},
+        )
+
+    transport_client = httpx.Client(transport=httpx.MockTransport(handler))
+    messages: list[str] = []
+    client = AlphaHistoricalClient(
+        "test-key",
+        cache=DiskJsonCache(tmp_path),
+        max_api_calls=19,
+        min_request_interval=0.0,
+        client=transport_client,
+        progress=messages.append,
+    )
+    with pytest.raises(AlphaProviderBlocked, match="25 requests per day"):
+        client.earnings_payload("DAL")
+    with pytest.raises(AlphaProviderBlocked, match="25 requests per day"):
+        client.earnings_payload("JPM")
+    assert calls == 1
+    assert client.api_calls == 1
+    assert client.blocked_reason is not None
+    assert any("provider message" in message for message in messages)
+    transport_client.close()
+
+
 def test_local_daily_price_store_loads_only_explicit_adjusted_input(tmp_path):
     path = tmp_path / "prices.csv"
     path.write_text(
@@ -168,12 +201,11 @@ def test_historical_news_normalization_rejects_future_articles():
     assert rows[0].available_at <= cutoff
 
 
-def test_enrichment_turns_on_eps_prices_and_reasoning_without_network(tmp_path, monkeypatch):
-    event = _event()
-    cutoff = datetime(2026, 1, 29, 21, tzinfo=timezone.utc)
+def _write_seed_row(tmp_path, event: HistoricalEvent) -> tuple[object, object]:
+    cutoff = datetime.fromisoformat(event.event_datetime or "2026-01-29T21:00:00+00:00")
     seed_vector = build_feature_vector_v3(
         disclosure=list(event.disclosure),
-        context=V3Context(ticker="AAPL", cutoff=cutoff),
+        context=V3Context(ticker=event.ticker, cutoff=cutoff),
     )
     seed = V3TrainingRow(
         event_id=event.event_id,
@@ -187,6 +219,31 @@ def test_enrichment_turns_on_eps_prices_and_reasoning_without_network(tmp_path, 
     rows_path = tmp_path / "seed.jsonl.gz"
     output_path = tmp_path / "enriched.jsonl.gz"
     write_training_rows([seed], rows_path)
+    return rows_path, output_path
+
+
+def test_enrichment_without_evidence_does_not_claim_reasoning(tmp_path, monkeypatch):
+    event = _event()
+    rows_path, output_path = _write_seed_row(tmp_path, event)
+    monkeypatch.setattr(enrichment, "load_historical_events", lambda _source: [event])
+    report = enrich_training_rows(
+        rows_path=rows_path,
+        historical_dir=tmp_path,
+        output_path=output_path,
+        alpha_api_key=None,
+        include_historical_news=False,
+        reasoning_mode="deterministic",
+        progress_every=0,
+    )
+    values = load_training_rows(output_path)[0].values
+    assert values["has_reasoning"] == 0.0
+    assert report.rows_with_reasoning == 0
+    assert report.family_coverage["reasoning"] == 0.0
+
+
+def test_enrichment_turns_on_eps_prices_and_reasoning_without_network(tmp_path, monkeypatch):
+    event = _event()
+    rows_path, output_path = _write_seed_row(tmp_path, event)
 
     cache_dir = tmp_path / "cache"
     DiskJsonCache(cache_dir).put(
