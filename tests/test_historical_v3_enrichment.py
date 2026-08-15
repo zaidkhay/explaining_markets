@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+import explaining_markets.historical_v3_enrichment as enrichment
+from explaining_markets.features_v3 import build_feature_vector_v3
 from explaining_markets.historical import HistoricalEvent
 from explaining_markets.historical_v3_enrichment import (
     DiskJsonCache,
     LocalDailyPriceStore,
     _match_earnings,
     _normalize_broad_news,
+    enrich_training_rows,
 )
+from explaining_markets.v3_records import V3Context
+from explaining_markets.v3_training import V3TrainingRow
+from explaining_markets.v3_training_data import load_training_rows, write_training_rows
 
 
 def _event() -> HistoricalEvent:
@@ -112,3 +117,70 @@ def test_historical_news_normalization_rejects_future_articles():
     assert len(rows) == 1
     assert rows[0].headline.startswith("Apple raises")
     assert rows[0].available_at <= cutoff
+
+
+def test_enrichment_turns_on_eps_prices_and_reasoning_without_network(tmp_path, monkeypatch):
+    event = _event()
+    cutoff = datetime(2026, 1, 29, 21, tzinfo=timezone.utc)
+    seed_vector = build_feature_vector_v3(
+        disclosure=list(event.disclosure),
+        context=V3Context(ticker="AAPL", cutoff=cutoff),
+    )
+    seed = V3TrainingRow(
+        event_id=event.event_id,
+        ticker=event.ticker,
+        quarter=event.quarter or "2026Q1",
+        target_percentile=0.5,
+        values=seed_vector.values,
+        surprise_percentile=0.5,
+        leakage_violations=0,
+    )
+    rows_path = tmp_path / "seed.jsonl.gz"
+    output_path = tmp_path / "enriched.jsonl.gz"
+    write_training_rows([seed], rows_path)
+
+    cache_dir = tmp_path / "cache"
+    DiskJsonCache(cache_dir).put(
+        "earnings",
+        "AAPL",
+        {
+            "quarterlyEarnings": [
+                {
+                    "reportedDate": "2026-01-29",
+                    "reportedEPS": "2.40",
+                    "estimatedEPS": "2.20",
+                }
+            ]
+        },
+    )
+
+    price_path = tmp_path / "prices.csv"
+    start = datetime(2020, 1, 1)
+    lines = ["ticker,date,close,volume,source"]
+    for i in range(1262):
+        day = (start + timedelta(days=i)).date().isoformat()
+        lines.append(f"AAPL,{day},{100.0 + i * 0.01},1000,test_adjusted")
+    price_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(enrichment, "load_historical_events", lambda _source: [event])
+    report = enrich_training_rows(
+        rows_path=rows_path,
+        historical_dir=tmp_path,
+        output_path=output_path,
+        alpha_api_key="test-key",
+        cache_dir=cache_dir,
+        max_api_calls=0,
+        price_csv=price_path,
+        include_historical_news=False,
+        reasoning_mode="deterministic",
+    )
+    enriched = load_training_rows(output_path)
+    values = enriched[0].values
+    assert report.alpha_api_calls == 0
+    assert values["has_eps_surprise"] == 1.0
+    assert values["has_5y_price_history"] == 1.0
+    assert values["has_reasoning"] == 1.0
+    assert values["eps_surprise_percent"] > 0.0
+    assert report.family_coverage["eps"] == 1.0
+    assert report.family_coverage["price_5y"] == 1.0
+    assert report.family_coverage["reasoning"] == 1.0
