@@ -1,10 +1,9 @@
 """Event-level structured reasoning over a curated pre-cutoff numeric/news packet."""
 from __future__ import annotations
 
-import json
-import os
 from statistics import mean
 
+from explaining_markets.reasoning.openrouter_client import openrouter_api_key, openrouter_model, structured_json
 from explaining_markets.reasoning.schemas import EventReasoning, ReasonedNewsItem
 
 _EVENT_SCHEMA = {
@@ -58,9 +57,16 @@ def _source_ids(*groups: tuple[ReasonedNewsItem, ...]) -> tuple[str, ...]:
 class EventReasoner:
     """Produces auditable features, never the final competition percentile."""
 
-    def __init__(self, *, use_openai: bool | None = None, model: str | None = None) -> None:
-        self.use_openai = bool(os.getenv("OPENAI_API_KEY")) if use_openai is None else bool(use_openai)
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5-mini")
+    def __init__(
+        self,
+        *,
+        use_openrouter: bool | None = None,
+        use_openai: bool | None = None,
+        model: str | None = None,
+    ) -> None:
+        requested = use_openrouter if use_openrouter is not None else use_openai
+        self.use_openrouter = bool(openrouter_api_key()) if requested is None else bool(requested)
+        self.model = model or openrouter_model()
 
     def reason(
         self,
@@ -72,9 +78,9 @@ class EventReasoner:
         sector_news: tuple[ReasonedNewsItem, ...] = (),
     ) -> EventReasoning:
         deterministic = self._deterministic(values=values, cutoff=cutoff, company_news=company_news, peer_news=peer_news, sector_news=sector_news)
-        if self.use_openai:
+        if self.use_openrouter:
             try:
-                return self._openai_reason(deterministic, values=values, cutoff=cutoff, company_news=company_news, peer_news=peer_news, sector_news=sector_news)
+                return self._openrouter_reason(deterministic, values=values, cutoff=cutoff, company_news=company_news, peer_news=peer_news, sector_news=sector_news)
             except Exception:
                 pass
         return deterministic
@@ -152,9 +158,7 @@ class EventReasoner:
             source_ids=_source_ids(company_news, peer_news, sector_news),
         )
 
-    def _openai_reason(self, base: EventReasoning, *, values, cutoff, company_news, peer_news, sector_news) -> EventReasoning:
-        from openai import OpenAI
-
+    def _openrouter_reason(self, base: EventReasoning, *, values, cutoff, company_news, peer_news, sector_news) -> EventReasoning:
         allowed_names = (
             "eps_surprise_percent", "revenue_surprise_percent", "guidance_surprise_percent",
             "guidance_above_consensus", "guidance_below_consensus", "guidance_direction",
@@ -176,16 +180,18 @@ class EventReasoner:
                 "overall_event_signal": base.overall_event_signal,
             },
         }
-        client = OpenAI()
-        response = client.responses.create(
+        data = structured_json(
+            schema_name="event_reasoning",
+            schema=_EVENT_SCHEMA,
             model=self.model,
-            input=[
-                {"role": "system", "content": "You are a structured feature extractor for an event-study model. Use only the supplied pre-cutoff packet. Evaluate earnings, revenue, guidance, contradictions, priced-in context, company/peer/sector news, and historical analogy. Do not output a stock price or competition percentile. Do not reveal hidden chain-of-thought; provide only bounded scores and a concise rationale."},
-                {"role": "user", "content": json.dumps(packet, sort_keys=True)},
-            ],
-            text={"format": {"type": "json_schema", "name": "event_reasoning", "schema": _EVENT_SCHEMA, "strict": True}},
+            system_prompt=(
+                "You are a structured feature extractor for an event-study model. Use only the supplied "
+                "pre-cutoff packet. Evaluate earnings, revenue, guidance, contradictions, priced-in context, "
+                "company/peer/sector news, and historical analogy. Do not output a stock price or competition "
+                "percentile. Do not reveal hidden chain-of-thought; provide only bounded scores and a concise rationale."
+            ),
+            user_payload=packet,
         )
-        data = json.loads(response.output_text)
         return EventReasoning(
             cutoff=cutoff,
             earnings_quality=float(data["earnings_quality"]),
