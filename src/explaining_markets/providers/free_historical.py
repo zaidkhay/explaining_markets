@@ -1,8 +1,9 @@
 """Free-tier historical providers used by V3 enrichment.
 
-Tiingo supplies adjusted EOD prices. Finnhub supplies the last four quarterly
-EPS surprises and one year of company news. Successful responses are cached by
-the caller's cache object; failures never become fake zero-valued records.
+Tiingo and FMP supply historical EOD prices. Finnhub supplies the last four
+quarterly EPS surprises and one year of company news. Successful responses are
+cached by the caller's cache object; failures never become fake zero-valued
+records.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from explaining_markets.v3_records import EarningsRecord, NewsRecord, PriceRecor
 
 _TIINGO_BASE = "https://api.tiingo.com/tiingo/daily"
 _FINNHUB_BASE = "https://finnhub.io/api/v1"
+_FMP_BASE = "https://financialmodelingprep.com/stable"
 
 
 class ProviderBudgetExhausted(RuntimeError):
@@ -103,8 +105,8 @@ class _CachedJsonClient:
             raise RuntimeError(f"{self.vendor} request failed: {type(exc).__name__}") from exc
 
         if isinstance(payload, dict):
-            error = payload.get("error") or payload.get("message")
-            if error and len(payload) <= 3:
+            error = payload.get("error") or payload.get("message") or payload.get("Error Message")
+            if error and len(payload) <= 4:
                 self.unavailable_reason = f"{self.vendor}: {error}"
                 self.failures += 1
                 raise ProviderUnavailable(self.unavailable_reason)
@@ -151,6 +153,52 @@ class TiingoHistoricalClient(_CachedJsonClient):
         return payload
 
 
+class FmpHistoricalClient(_CachedJsonClient):
+    """Financial Modeling Prep EOD fallback for symbols not covered by Tiingo cache."""
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        cache,
+        max_api_calls: int = 200,
+        timeout: float = 12.0,
+        client: httpx.Client | None = None,
+        progress: Callable[[str], None] | None = None,
+    ) -> None:
+        if not api_key:
+            raise ValueError("FMP_API_KEY is required")
+        super().__init__(
+            cache=cache,
+            max_api_calls=max_api_calls,
+            timeout=timeout,
+            min_request_interval=0.25,
+            client=client,
+            progress=progress,
+            vendor="fmp",
+        )
+        self.api_key = api_key
+
+    def prices_payload(self, ticker: str, *, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        symbol = ticker.upper()
+        key = f"{symbol}|{start.date()}|{end.date()}"
+        payload = self._request(
+            namespace="fmp_prices",
+            cache_key=key,
+            url=f"{_FMP_BASE}/historical-price-eod/full",
+            params={
+                "symbol": symbol,
+                "from": start.date().isoformat(),
+                "to": end.date().isoformat(),
+                "apikey": self.api_key,
+            },
+            headers={"Accept": "application/json"},
+        )
+        if not isinstance(payload, list):
+            raise RuntimeError("FMP historical-price response was not a list")
+        return payload
+
+
 class FinnhubHistoricalClient(_CachedJsonClient):
     def __init__(
         self,
@@ -164,7 +212,6 @@ class FinnhubHistoricalClient(_CachedJsonClient):
     ) -> None:
         if not api_key:
             raise ValueError("FINNHUB_API_KEY is required")
-        # Free plan is 60 requests/minute; 1.05 seconds keeps us conservatively below it.
         super().__init__(
             cache=cache,
             max_api_calls=max_api_calls,
@@ -217,7 +264,6 @@ def tiingo_price_records(payload: list[dict[str, Any]], ticker: str, *, retrieve
         except (KeyError, TypeError, ValueError):
             continue
         volume_raw = raw.get("adjVolume") if raw.get("adjVolume") is not None else raw.get("volume")
-        # Conservatively make each EOD observation usable on the following UTC day.
         value_ts = date.replace(hour=21, minute=0, second=0, microsecond=0)
         available_at = (date + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         out.append(
@@ -226,6 +272,43 @@ def tiingo_price_records(payload: list[dict[str, Any]], ticker: str, *, retrieve
                 available_at=available_at,
                 retrieved_at=retrieved_at,
                 source="tiingo_eod_adjusted",
+                ticker=ticker.upper(),
+                close=close,
+                volume=float(volume_raw) if volume_raw not in (None, "") else None,
+            )
+        )
+    return tuple(sorted(out, key=lambda row: row.value_timestamp))
+
+
+def fmp_price_records(payload: list[dict[str, Any]], ticker: str, *, retrieved_at: datetime) -> tuple[PriceRecord, ...]:
+    """Normalize FMP EOD rows conservatively for pre-event use.
+
+    FMP's stable full EOD endpoint is split-adjusted according to the provider's
+    chart family. We still make each observation available on the following UTC
+    day so same-day events cannot consume a completed EOD bar prematurely.
+    """
+    out: list[PriceRecord] = []
+    for raw in payload:
+        date_raw = raw.get("date")
+        close_raw = raw.get("close")
+        if date_raw is None or close_raw is None:
+            continue
+        try:
+            date = _parse_iso_datetime(str(date_raw))
+            close = float(close_raw)
+        except (TypeError, ValueError):
+            continue
+        if close <= 0:
+            continue
+        volume_raw = raw.get("volume")
+        value_ts = date.replace(hour=21, minute=0, second=0, microsecond=0)
+        available_at = (date + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        out.append(
+            PriceRecord(
+                value_timestamp=value_ts,
+                available_at=available_at,
+                retrieved_at=retrieved_at,
+                source="fmp_eod",
                 ticker=ticker.upper(),
                 close=close,
                 volume=float(volume_raw) if volume_raw not in (None, "") else None,
