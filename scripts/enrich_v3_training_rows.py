@@ -55,13 +55,15 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=DEFAULT_ENRICHED_ROWS)
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
 
-    # Free-provider budgets are deliberately conservative. Tiingo Starter is
-    # 50 requests/hour; Finnhub Free is 60 requests/minute.
     parser.add_argument("--tiingo-api-calls", type=int, default=40)
+    parser.add_argument(
+        "--fmp-api-calls",
+        type=int,
+        default=0,
+        help="FMP historical EOD fallback calls; set explicitly after smoke-testing your plan",
+    )
     parser.add_argument("--finnhub-api-calls", type=int, default=50)
 
-    # Backwards-compatible Alpha flags. Alpha is fallback-only now and defaults
-    # to zero new historical calls so its 25/day free allowance is preserved.
     parser.add_argument("--earnings-api-calls", type=int, default=0, help="Alpha fallback EARNINGS calls")
     parser.add_argument("--news-api-calls", type=int, default=0, help="Alpha fallback NEWS calls")
 
@@ -81,7 +83,14 @@ def main() -> int:
     parser.add_argument("--min-price-coverage", type=float, default=0.50)
     args = parser.parse_args()
 
-    for name in ("tiingo_api_calls", "finnhub_api_calls", "earnings_api_calls", "news_api_calls", "openrouter_max_calls"):
+    for name in (
+        "tiingo_api_calls",
+        "fmp_api_calls",
+        "finnhub_api_calls",
+        "earnings_api_calls",
+        "news_api_calls",
+        "openrouter_max_calls",
+    ):
         if getattr(args, name) < 0:
             parser.error(f"--{name.replace('_', '-')} must be non-negative")
     if args.request_timeout <= 0:
@@ -93,12 +102,14 @@ def main() -> int:
         os.environ["OPEN_ROUTER_MAX_CALLS"] = str(args.openrouter_max_calls)
 
     tiingo_key = _env("TINGO_API", "TIINGO_API_KEY", "TIINGO_API")
+    fmp_key = _env("FMP_API_KEY")
     finnhub_key = _env("FINNHUB_API_KEY", "FINNHUBB_API")
     openrouter_key = _env("OPEN_ROUTER_API_KEY", "OPENROUTER_API_KEY")
     alpha_key = _env("ALPHAVANTAGE_API_KEY", "NEWS_API_KEY")
 
     print("=== V3 PROVIDER CONFIG ===")
     print(f"tiingo_configured: {bool(tiingo_key)}")
+    print(f"fmp_configured: {bool(fmp_key)}")
     print(f"finnhub_configured: {bool(finnhub_key)}")
     print(f"openrouter_configured: {bool(openrouter_key)}")
     print(f"alpha_fallback_configured: {bool(alpha_key)}")
@@ -110,9 +121,11 @@ def main() -> int:
         output_path=args.output,
         cache_dir=args.cache_dir,
         tiingo_api_key=tiingo_key,
+        fmp_api_key=fmp_key,
         finnhub_api_key=finnhub_key,
         alpha_api_key=alpha_key,
         tiingo_max_api_calls=args.tiingo_api_calls,
+        fmp_max_api_calls=args.fmp_api_calls,
         finnhub_max_api_calls=args.finnhub_api_calls,
         alpha_max_api_calls=args.earnings_api_calls + args.news_api_calls,
         price_csv=args.price_csv,
@@ -132,6 +145,8 @@ def main() -> int:
     print(f"rows_with_prices: {report.rows_with_prices}")
     print(f"tiingo_api_calls_this_run: {report.tiingo_api_calls}")
     print(f"tiingo_cache_hits: {report.tiingo_cache_hits}")
+    print(f"fmp_api_calls_this_run: {report.fmp_api_calls}")
+    print(f"fmp_cache_hits: {report.fmp_cache_hits}")
     print(f"finnhub_api_calls_this_run: {report.finnhub_api_calls}")
     print(f"finnhub_cache_hits: {report.finnhub_cache_hits}")
     print(f"alpha_api_calls_this_run: {report.alpha_api_calls}")
