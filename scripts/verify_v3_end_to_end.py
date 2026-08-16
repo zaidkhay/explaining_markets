@@ -2,13 +2,11 @@
 
 Examples:
     uv run python scripts/verify_v3_end_to_end.py --synthetic
-    uv run python scripts/verify_v3_end_to_end.py --openai
+    uv run python scripts/verify_v3_end_to_end.py --openrouter
     uv run python scripts/verify_v3_end_to_end.py --live AAPL --sector Technology --sector-ticker XLK --peers MSFT,NVDA,GOOGL,META
     uv run python scripts/verify_v3_end_to_end.py --all AAPL --sector Technology --sector-ticker XLK --peers MSFT,NVDA,GOOGL,META
 
-Diagnostic V3 scores are never submitted to the competition. They use a
-short-lived synthetic artifact solely to prove that the V3 feature/inference
-machinery does not mechanically collapse to ~0.49 when inputs differ.
+Diagnostic V3 scores are never submitted to the competition.
 """
 from __future__ import annotations
 
@@ -16,12 +14,10 @@ import argparse
 import json
 import sys
 
-from explaining_markets.v3_verification import (
-    run_synthetic_suite,
-    summarize_scores,
-    verify_live_ticker,
-    verify_openai_structured_output,
-)
+from dotenv import load_dotenv
+
+from explaining_markets.reasoning.openrouter_client import openrouter_api_key, openrouter_model, structured_json
+from explaining_markets.v3_verification import run_synthetic_suite, summarize_scores, verify_live_ticker
 
 
 def _print_synthetic() -> None:
@@ -43,23 +39,41 @@ def _print_synthetic() -> None:
     for key, value in summary.items():
         print(f"  {key}: {value:.4f}")
     print("\nSYNTHETIC V3 VERIFICATION: PASS")
-    print("  - strong positive > neutral > strong negative")
-    print("  - positive news > negative news")
-    print("  - beat+cut contradiction detected")
-    print("  - priced-in context changes scores")
-    print("  - post-cutoff news is rejected")
     print("  - score distribution is not collapsed around 0.49")
+    print("  - post-cutoff news is rejected")
 
 
-def _print_openai() -> bool:
-    print("\n=== OPENAI STRUCTURED-OUTPUT SMOKE TEST ===")
-    result = verify_openai_structured_output()
-    print(json.dumps(result, indent=2, default=str))
-    if result.get("ok"):
-        print("OPENAI STRUCTURED REASONING: PASS")
+def _print_openrouter() -> bool:
+    load_dotenv()
+    print("\n=== OPENROUTER STRUCTURED-OUTPUT SMOKE TEST ===")
+    if not openrouter_api_key():
+        print(json.dumps({"configured": False, "ok": False, "detail": "OPEN_ROUTER_API_KEY missing"}, indent=2))
+        print("OPENROUTER STRUCTURED REASONING: FAIL")
+        return False
+    try:
+        result = structured_json(
+            schema_name="v3_reasoning_smoke",
+            schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "direction": {"type": "number", "minimum": -1, "maximum": 1},
+                    "materiality": {"type": "number", "minimum": 0, "maximum": 1},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "rationale": {"type": "string", "maxLength": 180},
+                },
+                "required": ["direction", "materiality", "confidence", "rationale"],
+            },
+            system_prompt="Use only the supplied synthetic headline. Return bounded structured market-event features.",
+            user_payload={"headline": "Synthetic company beats EPS expectations and raises guidance."},
+        )
+        print(json.dumps({"configured": True, "ok": True, "model": openrouter_model(), "result": result}, indent=2))
+        print("OPENROUTER STRUCTURED REASONING: PASS")
         return True
-    print("OPENAI STRUCTURED REASONING: FAIL")
-    return False
+    except Exception as exc:
+        print(json.dumps({"configured": True, "ok": False, "model": openrouter_model(), "detail": f"{type(exc).__name__}: {exc}"}, indent=2))
+        print("OPENROUTER STRUCTURED REASONING: FAIL")
+        return False
 
 
 def _print_live(args) -> dict:
@@ -90,20 +104,23 @@ def _print_live(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Exhaustive V3 verification suite")
     parser.add_argument("--synthetic", action="store_true", help="run deterministic V3 scenario matrix")
-    parser.add_argument("--openai", action="store_true", help="make one real OpenAI structured-output smoke-test call")
+    parser.add_argument("--openrouter", action="store_true", help="make one real OpenRouter structured-output smoke-test call")
+    parser.add_argument("--openai", action="store_true", help=argparse.SUPPRESS)  # backwards-compatible alias
     parser.add_argument("--live", dest="live_ticker", metavar="TICKER", help="run real live-feed V3 verification for one ticker")
-    parser.add_argument("--all", dest="all_ticker", metavar="TICKER", help="run synthetic + OpenAI + live checks")
+    parser.add_argument("--all", dest="all_ticker", metavar="TICKER", help="run synthetic + OpenRouter + live checks")
     parser.add_argument("--sector", default=None)
     parser.add_argument("--sector-ticker", default=None)
     parser.add_argument("--peers", default="", help="comma-separated peer tickers")
     parser.add_argument("--require-production-v3", action="store_true", help="fail unless a promoted V3 artifact is the current production model")
     args = parser.parse_args()
 
+    if args.openai:
+        args.openrouter = True
     if args.all_ticker:
         args.synthetic = True
-        args.openai = True
+        args.openrouter = True
         args.live_ticker = args.all_ticker
-    if not (args.synthetic or args.openai or args.live_ticker):
+    if not (args.synthetic or args.openrouter or args.live_ticker):
         args.synthetic = True
 
     ok = True
@@ -114,8 +131,8 @@ def main() -> int:
             ok = False
             print(f"\nSYNTHETIC V3 VERIFICATION: FAIL: {type(exc).__name__}: {exc}", file=sys.stderr)
 
-    if args.openai:
-        ok = _print_openai() and ok
+    if args.openrouter:
+        ok = _print_openrouter() and ok
 
     live = None
     if args.live_ticker:
