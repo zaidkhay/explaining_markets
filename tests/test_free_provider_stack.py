@@ -6,7 +6,11 @@ import httpx
 
 from explaining_markets.historical import HistoricalEvent
 from explaining_markets.historical_v3_enrichment import DiskJsonCache
-from explaining_markets.historical_v3_enrichment_free import enrich_training_rows_free
+from explaining_markets.historical_v3_enrichment_free import (
+    _prices_available_by_cutoff,
+    enrich_training_rows_free,
+)
+from explaining_markets.point_in_time_audit_v3 import audit_context
 from explaining_markets.providers.free_historical import (
     FinnhubHistoricalClient,
     TiingoHistoricalClient,
@@ -15,6 +19,7 @@ from explaining_markets.providers.free_historical import (
     tiingo_price_records,
 )
 from explaining_markets.reasoning.openrouter_client import reset_openrouter_budget_for_tests, structured_json
+from explaining_markets.v3_records import PriceRecord, V3Context
 
 
 def test_free_enrichment_entrypoint_is_importable():
@@ -53,6 +58,40 @@ def test_tiingo_adjusted_prices_and_cache(tmp_path):
     assert rows[-1].source == "tiingo_eod_adjusted"
     assert rows[-1].available_at > rows[-1].value_timestamp
     http.close()
+
+
+def test_tiingo_bulk_cache_is_trimmed_to_each_event_cutoff():
+    cutoff = datetime(2026, 1, 29, 21, 0, tzinfo=timezone.utc)
+    rows = (
+        PriceRecord(
+            value_timestamp=datetime(2026, 1, 28, 21, 0, tzinfo=timezone.utc),
+            available_at=datetime(2026, 1, 29, 0, 0, tzinfo=timezone.utc),
+            retrieved_at=datetime(2026, 8, 16, tzinfo=timezone.utc),
+            source="tiingo_eod_adjusted",
+            ticker="AAPL",
+            close=100.0,
+        ),
+        PriceRecord(
+            value_timestamp=datetime(2026, 1, 29, 21, 0, tzinfo=timezone.utc),
+            available_at=datetime(2026, 1, 30, 0, 0, tzinfo=timezone.utc),
+            retrieved_at=datetime(2026, 8, 16, tzinfo=timezone.utc),
+            source="tiingo_eod_adjusted",
+            ticker="AAPL",
+            close=101.0,
+        ),
+        PriceRecord(
+            value_timestamp=datetime(2026, 2, 2, 21, 0, tzinfo=timezone.utc),
+            available_at=datetime(2026, 2, 3, 0, 0, tzinfo=timezone.utc),
+            retrieved_at=datetime(2026, 8, 16, tzinfo=timezone.utc),
+            source="tiingo_eod_adjusted",
+            ticker="AAPL",
+            close=110.0,
+        ),
+    )
+    eligible = _prices_available_by_cutoff(rows, cutoff)
+    assert [row.close for row in eligible] == [100.0]
+    context = V3Context(ticker="AAPL", cutoff=cutoff, stock_prices=eligible)
+    assert audit_context(context).violations == 0
 
 
 def test_finnhub_eps_matches_preceding_fiscal_period():
