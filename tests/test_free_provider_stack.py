@@ -6,6 +6,7 @@ import httpx
 
 from explaining_markets.historical import HistoricalEvent
 from explaining_markets.historical_v3_enrichment import DiskJsonCache
+from explaining_markets.historical_v3_enrichment_free import enrich_training_rows_free
 from explaining_markets.providers.free_historical import (
     FinnhubHistoricalClient,
     TiingoHistoricalClient,
@@ -14,6 +15,10 @@ from explaining_markets.providers.free_historical import (
     tiingo_price_records,
 )
 from explaining_markets.reasoning.openrouter_client import reset_openrouter_budget_for_tests, structured_json
+
+
+def test_free_enrichment_entrypoint_is_importable():
+    assert callable(enrich_training_rows_free)
 
 
 def test_tiingo_adjusted_prices_and_cache(tmp_path):
