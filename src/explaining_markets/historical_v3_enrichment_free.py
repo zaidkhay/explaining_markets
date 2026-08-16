@@ -127,6 +127,25 @@ def _cached_finnhub_news(cache: DiskJsonCache, ticker: str, start: datetime, end
     return payload if isinstance(payload, list) else None
 
 
+def _prices_available_by_cutoff(
+    rows: tuple[PriceRecord, ...], cutoff: datetime
+) -> tuple[PriceRecord, ...]:
+    """Keep only price observations that were actually available by the focal cutoff.
+
+    Tiingo is intentionally fetched once across a ticker's full archive span so
+    the cache can be reused across many historical events.  The resulting bulk
+    series can therefore contain observations from *after* an early event.  We
+    must trim that shared series for each event before it enters V3Context; the
+    point-in-time audit then verifies the already-trimmed context rather than
+    seeing harmless-but-future cache rows.
+    """
+    return tuple(
+        row
+        for row in rows
+        if row.value_timestamp <= cutoff and row.eligible(cutoff)
+    )
+
+
 def enrich_training_rows_free(
     *,
     rows_path: str | Path,
@@ -303,6 +322,10 @@ def enrich_training_rows_free(
                     prices = ()
                 except Exception:
                     prices = ()
+
+            # A ticker-level cache intentionally spans all archive events.  Trim
+            # it to the focal event before building/auditing the historical context.
+            prices = _prices_available_by_cutoff(tuple(prices), cutoff)
             if prices:
                 rows_with_prices += 1
 
