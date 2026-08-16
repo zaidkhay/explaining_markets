@@ -3,7 +3,8 @@
 Provider preference:
 * Explicit local adjusted-price CSV if supplied.
 * Tiingo adjusted EOD history when cached/available.
-* FMP historical EOD as the scalable free fallback for the long ticker tail.
+* Twelve Data adjusted daily history for broad free US-equity coverage.
+* FMP historical EOD only for symbols permitted by the account/cache.
 * Finnhub free EPS-surprise + company-news endpoints -> earnings/news context.
 * Alpha Vantage remains an optional cached/fallback source.
 * OpenRouter is opt-in for historical reasoning; deterministic reasoning remains
@@ -42,10 +43,12 @@ from explaining_markets.providers.free_historical import (
     ProviderBudgetExhausted,
     ProviderUnavailable,
     TiingoHistoricalClient,
+    TwelveDataHistoricalClient,
     finnhub_earnings_record,
     finnhub_news_records,
     fmp_price_records,
     tiingo_price_records,
+    twelve_data_price_records,
 )
 from explaining_markets.reasoning.event_reasoner import EventReasoner
 from explaining_markets.reasoning.news_reasoner import NewsReasoner
@@ -73,18 +76,27 @@ class FreeProviderEnrichmentReport:
     alpha_cache_hits: int = 0
     tiingo_api_calls: int = 0
     tiingo_cache_hits: int = 0
+    twelve_data_api_calls: int = 0
+    twelve_data_cache_hits: int = 0
     fmp_api_calls: int = 0
     fmp_cache_hits: int = 0
     finnhub_api_calls: int = 0
     finnhub_cache_hits: int = 0
     alpha_blocked_reason: str | None = None
     tiingo_blocked_reason: str | None = None
+    twelve_data_blocked_reason: str | None = None
     fmp_blocked_reason: str | None = None
     finnhub_blocked_reason: str | None = None
 
     @property
     def cache_hits(self) -> int:
-        return self.alpha_cache_hits + self.tiingo_cache_hits + self.fmp_cache_hits + self.finnhub_cache_hits
+        return (
+            self.alpha_cache_hits
+            + self.tiingo_cache_hits
+            + self.twelve_data_cache_hits
+            + self.fmp_cache_hits
+            + self.finnhub_cache_hits
+        )
 
     def as_dict(self) -> dict:
         return {
@@ -99,6 +111,8 @@ class FreeProviderEnrichmentReport:
             "alpha_cache_hits": self.alpha_cache_hits,
             "tiingo_api_calls": self.tiingo_api_calls,
             "tiingo_cache_hits": self.tiingo_cache_hits,
+            "twelve_data_api_calls": self.twelve_data_api_calls,
+            "twelve_data_cache_hits": self.twelve_data_cache_hits,
             "fmp_api_calls": self.fmp_api_calls,
             "fmp_cache_hits": self.fmp_cache_hits,
             "finnhub_api_calls": self.finnhub_api_calls,
@@ -106,6 +120,7 @@ class FreeProviderEnrichmentReport:
             "cache_hits": self.cache_hits,
             "alpha_blocked_reason": self.alpha_blocked_reason,
             "tiingo_blocked_reason": self.tiingo_blocked_reason,
+            "twelve_data_blocked_reason": self.twelve_data_blocked_reason,
             "fmp_blocked_reason": self.fmp_blocked_reason,
             "finnhub_blocked_reason": self.finnhub_blocked_reason,
         }
@@ -124,6 +139,13 @@ def _cached_tiingo_prices(cache: DiskJsonCache, ticker: str, start: datetime, en
     key = f"{ticker.upper()}|{start.date()}|{end.date()}"
     payload = cache.get("tiingo_prices", key)
     return tiingo_price_records(payload, ticker, retrieved_at=_utcnow()) if isinstance(payload, list) else ()
+
+
+def _cached_twelve_data_prices(cache: DiskJsonCache, ticker: str, start: datetime, end: datetime) -> tuple[PriceRecord, ...]:
+    key = f"{ticker.upper()}|{start.date()}|{end.date()}|adjust=all"
+    payload = cache.get("twelve_data_prices", key)
+    values = payload.get("values") if isinstance(payload, dict) else None
+    return twelve_data_price_records(values, ticker, retrieved_at=_utcnow()) if isinstance(values, list) else ()
 
 
 def _cached_fmp_prices(cache: DiskJsonCache, ticker: str, start: datetime, end: datetime) -> tuple[PriceRecord, ...]:
@@ -161,10 +183,12 @@ def enrich_training_rows_free(
     output_path: str | Path = DEFAULT_ENRICHED_ROWS,
     cache_dir: str | Path = DEFAULT_CACHE_DIR,
     tiingo_api_key: str | None = None,
+    twelve_data_api_key: str | None = None,
     fmp_api_key: str | None = None,
     finnhub_api_key: str | None = None,
     alpha_api_key: str | None = None,
     tiingo_max_api_calls: int = 40,
+    twelve_data_max_api_calls: int = 0,
     fmp_max_api_calls: int = 0,
     finnhub_max_api_calls: int = 50,
     alpha_max_api_calls: int = 0,
@@ -192,6 +216,16 @@ def enrich_training_rows_free(
             timeout=request_timeout,
         )
         if tiingo_api_key
+        else None
+    )
+    twelve_data = (
+        TwelveDataHistoricalClient(
+            twelve_data_api_key,
+            cache=cache,
+            max_api_calls=twelve_data_max_api_calls,
+            timeout=request_timeout,
+        )
+        if twelve_data_api_key
         else None
     )
     fmp = (
@@ -241,10 +275,12 @@ def enrich_training_rows_free(
                 print(f"[V3_ENRICH] Alpha news fallback skipped {start.date()}..{end.date()}: {type(exc).__name__}", flush=True)
 
     tiingo_prices_by_ticker: dict[str, tuple[PriceRecord, ...]] = {}
+    twelve_data_prices_by_ticker: dict[str, tuple[PriceRecord, ...]] = {}
     fmp_prices_by_ticker: dict[str, tuple[PriceRecord, ...]] = {}
     finnhub_earnings_by_ticker: dict[str, list[dict] | None] = {}
     finnhub_news_by_ticker: dict[str, tuple[NewsRecord, ...]] = {}
     tiingo_blocked = False
+    twelve_data_blocked = False
     fmp_blocked = False
     finnhub_blocked = False
     alpha_blocked = False
@@ -308,7 +344,7 @@ def enrich_training_rows_free(
             if earnings is not None:
                 eps_matches += 1
 
-            # Prices: local CSV -> Tiingo -> FMP -> optional Alpha premium.
+            # Prices: local CSV -> Tiingo -> Twelve Data -> FMP -> optional Alpha premium.
             prices = local_prices.prices(ticker)
             first, last = bounds.get(ticker, (cutoff, cutoff))
             start = first - timedelta(days=5 * 366 + 45)
@@ -333,6 +369,29 @@ def enrich_training_rows_free(
                         fetched = _cached_tiingo_prices(cache, ticker, start, end)
                     tiingo_prices_by_ticker[ticker] = fetched
                 prices = tiingo_prices_by_ticker.get(ticker, ())
+
+            if not prices and twelve_data is not None:
+                if ticker not in twelve_data_prices_by_ticker:
+                    fetched = ()
+                    if not twelve_data_blocked:
+                        try:
+                            fetched = twelve_data_price_records(
+                                twelve_data.prices_payload(ticker, start=start, end=end),
+                                ticker,
+                                retrieved_at=_utcnow(),
+                            )
+                        except ProviderBudgetExhausted as exc:
+                            twelve_data_blocked = True
+                            print(f"[V3_ENRICH] Twelve Data switched to cache-only: {str(exc)[:300]}", flush=True)
+                        except ProviderUnavailable as exc:
+                            twelve_data_blocked = True
+                            print(f"[V3_ENRICH] Twelve Data unavailable; cache-only: {str(exc)[:300]}", flush=True)
+                        except Exception as exc:
+                            print(f"[V3_ENRICH] Twelve Data prices unavailable {ticker}: {type(exc).__name__}: {str(exc)[:220]}", flush=True)
+                    if not fetched:
+                        fetched = _cached_twelve_data_prices(cache, ticker, start, end)
+                    twelve_data_prices_by_ticker[ticker] = fetched
+                prices = twelve_data_prices_by_ticker.get(ticker, ())
 
             if not prices and fmp is not None:
                 if ticker not in fmp_prices_by_ticker:
@@ -415,6 +474,8 @@ def enrich_training_rows_free(
             if prices:
                 if prices[0].source.startswith("tiingo"):
                     price_provider = "tiingo"
+                elif prices[0].source.startswith("twelve_data"):
+                    price_provider = "twelve_data"
                 elif prices[0].source.startswith("fmp"):
                     price_provider = "fmp"
                 else:
@@ -460,7 +521,7 @@ def enrich_training_rows_free(
                 )
             )
     finally:
-        for client in (tiingo, fmp, finnhub, alpha):
+        for client in (tiingo, twelve_data, fmp, finnhub, alpha):
             if client is not None:
                 client.close()
 
@@ -478,12 +539,15 @@ def enrich_training_rows_free(
         alpha_cache_hits=alpha.cache_hits if alpha else 0,
         tiingo_api_calls=tiingo.api_calls if tiingo else 0,
         tiingo_cache_hits=tiingo.cache_hits if tiingo else 0,
+        twelve_data_api_calls=twelve_data.api_calls if twelve_data else 0,
+        twelve_data_cache_hits=twelve_data.cache_hits if twelve_data else 0,
         fmp_api_calls=fmp.api_calls if fmp else 0,
         fmp_cache_hits=fmp.cache_hits if fmp else 0,
         finnhub_api_calls=finnhub.api_calls if finnhub else 0,
         finnhub_cache_hits=finnhub.cache_hits if finnhub else 0,
         alpha_blocked_reason=alpha.blocked_reason if alpha else None,
         tiingo_blocked_reason=tiingo.unavailable_reason if tiingo else None,
+        twelve_data_blocked_reason=twelve_data.unavailable_reason if twelve_data else None,
         fmp_blocked_reason=fmp.unavailable_reason if fmp else None,
         finnhub_blocked_reason=finnhub.unavailable_reason if finnhub else None,
     )
