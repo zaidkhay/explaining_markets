@@ -13,9 +13,11 @@ from explaining_markets.historical_v3_enrichment_free import (
 from explaining_markets.point_in_time_audit_v3 import audit_context
 from explaining_markets.providers.free_historical import (
     FinnhubHistoricalClient,
+    FmpHistoricalClient,
     TiingoHistoricalClient,
     finnhub_earnings_record,
     finnhub_news_records,
+    fmp_price_records,
     tiingo_price_records,
 )
 from explaining_markets.reasoning.openrouter_client import reset_openrouter_budget_for_tests, structured_json
@@ -56,6 +58,41 @@ def test_tiingo_adjusted_prices_and_cache(tmp_path):
     assert rows[-1].close == 102.0
     assert rows[-1].volume == 55.0
     assert rows[-1].source == "tiingo_eod_adjusted"
+    assert rows[-1].available_at > rows[-1].value_timestamp
+    http.close()
+
+
+def test_fmp_historical_prices_and_cache(tmp_path):
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        assert request.url.path.endswith("/historical-price-eod/full")
+        assert request.url.params["symbol"] == "AAPL"
+        assert request.url.params["apikey"] == "test-fmp"
+        return httpx.Response(
+            200,
+            json=[
+                {"date": "2026-01-28", "close": 102.0, "volume": 55},
+                {"date": "2026-01-27", "close": 100.0, "volume": 50},
+            ],
+        )
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    cache = DiskJsonCache(tmp_path)
+    client = FmpHistoricalClient("test-fmp", cache=cache, max_api_calls=1, client=http, progress=lambda _: None)
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    end = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    payload = client.prices_payload("AAPL", start=start, end=end)
+    payload2 = client.prices_payload("AAPL", start=start, end=end)
+    rows = fmp_price_records(payload, "AAPL", retrieved_at=end)
+    assert payload2 == payload
+    assert calls == 1
+    assert client.api_calls == 1
+    assert client.cache_hits == 1
+    assert [row.close for row in rows] == [100.0, 102.0]
+    assert rows[-1].source == "fmp_eod"
     assert rows[-1].available_at > rows[-1].value_timestamp
     http.close()
 
