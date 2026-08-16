@@ -57,10 +57,16 @@ def main() -> int:
 
     parser.add_argument("--tiingo-api-calls", type=int, default=40)
     parser.add_argument(
+        "--twelve-data-api-calls",
+        type=int,
+        default=0,
+        help="Twelve Data adjusted daily calls; enable after the entitlement smoke test passes",
+    )
+    parser.add_argument(
         "--fmp-api-calls",
         type=int,
         default=0,
-        help="FMP historical EOD fallback calls; set explicitly after smoke-testing your plan",
+        help="FMP historical EOD fallback calls; default zero because free symbol coverage is restricted",
     )
     parser.add_argument("--finnhub-api-calls", type=int, default=50)
 
@@ -85,6 +91,7 @@ def main() -> int:
 
     for name in (
         "tiingo_api_calls",
+        "twelve_data_api_calls",
         "fmp_api_calls",
         "finnhub_api_calls",
         "earnings_api_calls",
@@ -102,6 +109,7 @@ def main() -> int:
         os.environ["OPEN_ROUTER_MAX_CALLS"] = str(args.openrouter_max_calls)
 
     tiingo_key = _env("TINGO_API", "TIINGO_API_KEY", "TIINGO_API")
+    twelve_data_key = _env("TWELVE_DATA_API_KEY")
     fmp_key = _env("FMP_API_KEY")
     finnhub_key = _env("FINNHUB_API_KEY", "FINNHUBB_API")
     openrouter_key = _env("OPEN_ROUTER_API_KEY", "OPENROUTER_API_KEY")
@@ -109,6 +117,7 @@ def main() -> int:
 
     print("=== V3 PROVIDER CONFIG ===")
     print(f"tiingo_configured: {bool(tiingo_key)}")
+    print(f"twelve_data_configured: {bool(twelve_data_key)}")
     print(f"fmp_configured: {bool(fmp_key)}")
     print(f"finnhub_configured: {bool(finnhub_key)}")
     print(f"openrouter_configured: {bool(openrouter_key)}")
@@ -121,10 +130,12 @@ def main() -> int:
         output_path=args.output,
         cache_dir=args.cache_dir,
         tiingo_api_key=tiingo_key,
+        twelve_data_api_key=twelve_data_key,
         fmp_api_key=fmp_key,
         finnhub_api_key=finnhub_key,
         alpha_api_key=alpha_key,
         tiingo_max_api_calls=args.tiingo_api_calls,
+        twelve_data_max_api_calls=args.twelve_data_api_calls,
         fmp_max_api_calls=args.fmp_api_calls,
         finnhub_max_api_calls=args.finnhub_api_calls,
         alpha_max_api_calls=args.earnings_api_calls + args.news_api_calls,
@@ -145,6 +156,8 @@ def main() -> int:
     print(f"rows_with_prices: {report.rows_with_prices}")
     print(f"tiingo_api_calls_this_run: {report.tiingo_api_calls}")
     print(f"tiingo_cache_hits: {report.tiingo_cache_hits}")
+    print(f"twelve_data_api_calls_this_run: {report.twelve_data_api_calls}")
+    print(f"twelve_data_cache_hits: {report.twelve_data_cache_hits}")
     print(f"fmp_api_calls_this_run: {report.fmp_api_calls}")
     print(f"fmp_cache_hits: {report.fmp_cache_hits}")
     print(f"finnhub_api_calls_this_run: {report.finnhub_api_calls}")
