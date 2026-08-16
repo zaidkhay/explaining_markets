@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enrich V3 archive seed rows with historical EPS, prices, news and reasoning."""
+"""Enrich V3 archive rows using the free-provider stack."""
 from __future__ import annotations
 
 import argparse
@@ -11,22 +11,27 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from explaining_markets.historical_v3_enrichment import (
-    DEFAULT_CACHE_DIR,
-    DEFAULT_ENRICHED_ROWS,
-    enrich_training_rows,
-)
+from explaining_markets.historical_v3_enrichment import DEFAULT_CACHE_DIR, DEFAULT_ENRICHED_ROWS
+from explaining_markets.historical_v3_enrichment_free import enrich_training_rows_free
 from explaining_markets.v3_training_data import DEFAULT_ROWS_PATH
 
 DEFAULT_HISTORICAL_DIR = Path(__file__).resolve().parents[1] / "data" / "historical"
 
 
-def _coverage_gate(coverage: dict[str, float], *, min_eps: float, min_news: float, min_reasoning: float) -> tuple[bool, list[str]]:
+def _coverage_gate(
+    coverage: dict[str, float],
+    *,
+    min_eps: float,
+    min_news: float,
+    min_reasoning: float,
+    min_price: float,
+) -> tuple[bool, list[str]]:
     failures = []
     checks = {
         "eps": (coverage.get("eps", 0.0), min_eps),
         "company_news": (coverage.get("company_news", 0.0), min_news),
         "reasoning": (coverage.get("reasoning", 0.0), min_reasoning),
+        "price_5y": (coverage.get("price_5y", 0.0), min_price),
     }
     for name, (actual, required) in checks.items():
         if actual < required:
@@ -34,23 +39,12 @@ def _coverage_gate(coverage: dict[str, float], *, min_eps: float, min_news: floa
     return not failures, failures
 
 
-def _run_enrichment(args, *, max_api_calls: int, include_news: bool):
-    return enrich_training_rows(
-        rows_path=args.rows,
-        historical_dir=args.historical_dir,
-        output_path=args.output,
-        alpha_api_key=os.environ.get("ALPHAVANTAGE_API_KEY"),
-        cache_dir=args.cache_dir,
-        max_api_calls=max_api_calls,
-        price_csv=args.price_csv,
-        use_alpha_adjusted_prices=args.alpha_adjusted_prices,
-        include_historical_news=include_news,
-        news_chunk_days=args.news_chunk_days,
-        reasoning_mode=args.reasoning_mode,
-        request_timeout=args.request_timeout,
-        request_retries=args.request_retries,
-        progress_every=args.progress_every,
-    )
+def _env(*names: str) -> str | None:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return None
 
 
 def main() -> int:
@@ -60,60 +54,75 @@ def main() -> int:
     parser.add_argument("--historical-dir", type=Path, default=DEFAULT_HISTORICAL_DIR)
     parser.add_argument("--output", type=Path, default=DEFAULT_ENRICHED_ROWS)
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
-    parser.add_argument("--earnings-api-calls", type=int, default=19, help="Alpha calls reserved for historical EARNINGS/cache progress")
-    parser.add_argument("--news-api-calls", type=int, default=6, help="Alpha calls reserved for historical NEWS_SENTIMENT/cache progress")
-    parser.add_argument("--request-timeout", type=float, default=8.0, help="per-request Alpha Vantage timeout in seconds")
-    parser.add_argument("--request-retries", type=int, default=0, help="retries per uncached Alpha request; each attempt consumes budget")
-    parser.add_argument("--progress-every", type=int, default=500, help="print row progress every N rows; 0 disables row progress")
-    parser.add_argument("--price-csv", type=Path, default=None, help="bulk adjusted daily CSV with ticker,date,close[,volume,available_at,source]")
-    parser.add_argument("--alpha-adjusted-prices", action="store_true", help="try premium TIME_SERIES_DAILY_ADJUSTED when entitled")
+
+    # Free-provider budgets are deliberately conservative. Tiingo Starter is
+    # 50 requests/hour; Finnhub Free is 60 requests/minute.
+    parser.add_argument("--tiingo-api-calls", type=int, default=40)
+    parser.add_argument("--finnhub-api-calls", type=int, default=50)
+
+    # Backwards-compatible Alpha flags. Alpha is fallback-only now and defaults
+    # to zero new historical calls so its 25/day free allowance is preserved.
+    parser.add_argument("--earnings-api-calls", type=int, default=0, help="Alpha fallback EARNINGS calls")
+    parser.add_argument("--news-api-calls", type=int, default=0, help="Alpha fallback NEWS calls")
+
+    parser.add_argument("--request-timeout", type=float, default=10.0)
+    parser.add_argument("--progress-every", type=int, default=500)
+    parser.add_argument("--price-csv", type=Path, default=None, help="optional adjusted daily CSV fallback")
+    parser.add_argument("--alpha-adjusted-prices", action="store_true", help="try premium Alpha adjusted prices as a final fallback")
     parser.add_argument("--no-news", action="store_true")
-    parser.add_argument("--news-chunk-days", type=int, default=7, help="broad earnings-news cache window size")
-    parser.add_argument("--reasoning-mode", choices=("deterministic", "openai"), default="deterministic")
-    parser.add_argument("--retrain", action="store_true", help="run research V3 training only after the coverage gate passes")
+    parser.add_argument("--news-chunk-days", type=int, default=7, help="Alpha fallback broad-news window size")
+    parser.add_argument("--reasoning-mode", choices=("deterministic", "openrouter"), default="deterministic")
+    parser.add_argument("--openrouter-max-calls", type=int, default=25, help="process-wide LLM call cap when --reasoning-mode=openrouter")
+    parser.add_argument("--retrain", action="store_true", help="run research V3 training only after coverage gates pass")
+
     parser.add_argument("--min-eps-coverage", type=float, default=0.30)
     parser.add_argument("--min-news-coverage", type=float, default=0.20)
     parser.add_argument("--min-reasoning-coverage", type=float, default=0.20)
+    parser.add_argument("--min-price-coverage", type=float, default=0.50)
     args = parser.parse_args()
 
-    if args.earnings_api_calls < 0 or args.news_api_calls < 0:
-        parser.error("API call budgets must be non-negative")
+    for name in ("tiingo_api_calls", "finnhub_api_calls", "earnings_api_calls", "news_api_calls", "openrouter_max_calls"):
+        if getattr(args, name) < 0:
+            parser.error(f"--{name.replace('_', '-')} must be non-negative")
     if args.request_timeout <= 0:
         parser.error("--request-timeout must be positive")
-    if args.request_retries < 0:
-        parser.error("--request-retries must be non-negative")
     if args.progress_every < 0:
         parser.error("--progress-every must be non-negative")
 
-    earnings_report = _run_enrichment(
-        args,
-        max_api_calls=args.earnings_api_calls,
-        include_news=False,
-    )
+    if args.reasoning_mode == "openrouter":
+        os.environ["OPEN_ROUTER_MAX_CALLS"] = str(args.openrouter_max_calls)
 
-    if earnings_report.alpha_blocked_reason:
-        print(
-            "[V3_ENRICH] Alpha provider is blocked for this run; skipping news phase and using cache-only data.",
-            flush=True,
-        )
-        report = earnings_report
-        total_calls = earnings_report.alpha_api_calls
-        total_hits = earnings_report.cache_hits
-        blocked_reason = earnings_report.alpha_blocked_reason
-    elif not args.no_news and args.news_api_calls > 0:
-        report = _run_enrichment(
-            args,
-            max_api_calls=args.news_api_calls,
-            include_news=True,
-        )
-        total_calls = earnings_report.alpha_api_calls + report.alpha_api_calls
-        total_hits = earnings_report.cache_hits + report.cache_hits
-        blocked_reason = report.alpha_blocked_reason
-    else:
-        report = earnings_report
-        total_calls = earnings_report.alpha_api_calls
-        total_hits = earnings_report.cache_hits
-        blocked_reason = earnings_report.alpha_blocked_reason
+    tiingo_key = _env("TINGO_API", "TIINGO_API_KEY", "TIINGO_API")
+    finnhub_key = _env("FINNHUB_API_KEY", "FINNHUBB_API")
+    openrouter_key = _env("OPEN_ROUTER_API_KEY", "OPENROUTER_API_KEY")
+    alpha_key = _env("ALPHAVANTAGE_API_KEY", "NEWS_API_KEY")
+
+    print("=== V3 PROVIDER CONFIG ===")
+    print(f"tiingo_configured: {bool(tiingo_key)}")
+    print(f"finnhub_configured: {bool(finnhub_key)}")
+    print(f"openrouter_configured: {bool(openrouter_key)}")
+    print(f"alpha_fallback_configured: {bool(alpha_key)}")
+    print(f"reasoning_mode: {args.reasoning_mode}")
+
+    report = enrich_training_rows_free(
+        rows_path=args.rows,
+        historical_dir=args.historical_dir,
+        output_path=args.output,
+        cache_dir=args.cache_dir,
+        tiingo_api_key=tiingo_key,
+        finnhub_api_key=finnhub_key,
+        alpha_api_key=alpha_key,
+        tiingo_max_api_calls=args.tiingo_api_calls,
+        finnhub_max_api_calls=args.finnhub_api_calls,
+        alpha_max_api_calls=args.earnings_api_calls + args.news_api_calls,
+        price_csv=args.price_csv,
+        use_alpha_adjusted_prices=args.alpha_adjusted_prices,
+        include_historical_news=not args.no_news,
+        news_chunk_days=args.news_chunk_days,
+        reasoning_mode=args.reasoning_mode,
+        request_timeout=args.request_timeout,
+        progress_every=args.progress_every,
+    )
 
     print("=== V3 HISTORICAL ENRICHMENT ===")
     print(f"rows: {report.rows}")
@@ -121,10 +130,12 @@ def main() -> int:
     print(f"rows_with_company_news: {report.rows_with_company_news}")
     print(f"rows_with_reasoning: {report.rows_with_reasoning}")
     print(f"rows_with_prices: {report.rows_with_prices}")
-    print(f"alpha_api_calls_this_run: {total_calls}")
-    print(f"alpha_cache_hits_across_phases: {total_hits}")
-    if blocked_reason:
-        print(f"alpha_provider_blocked_reason: {blocked_reason}")
+    print(f"tiingo_api_calls_this_run: {report.tiingo_api_calls}")
+    print(f"tiingo_cache_hits: {report.tiingo_cache_hits}")
+    print(f"finnhub_api_calls_this_run: {report.finnhub_api_calls}")
+    print(f"finnhub_cache_hits: {report.finnhub_cache_hits}")
+    print(f"alpha_api_calls_this_run: {report.alpha_api_calls}")
+    print(f"alpha_cache_hits: {report.alpha_cache_hits}")
     print(f"output: {report.output_path}")
     print("family_coverage:")
     for name, value in sorted(report.family_coverage.items()):
@@ -135,6 +146,7 @@ def main() -> int:
         min_eps=args.min_eps_coverage,
         min_news=args.min_news_coverage,
         min_reasoning=args.min_reasoning_coverage,
+        min_price=args.min_price_coverage,
     )
     print(f"coverage_gate_passed: {passed}")
     for failure in failures:
@@ -145,10 +157,9 @@ def main() -> int:
         json.dumps(
             {
                 **report.as_dict(),
-                "alpha_api_calls_this_run_total": total_calls,
-                "alpha_provider_blocked_reason": blocked_reason,
                 "coverage_gate_passed": passed,
                 "coverage_gate_failures": failures,
+                "reasoning_mode": args.reasoning_mode,
             },
             indent=2,
             sort_keys=True,
@@ -168,8 +179,7 @@ def main() -> int:
             "--rows", str(args.output),
             "--run-tests",
         ]
-        result = subprocess.run(command, check=False)
-        return result.returncode
+        return subprocess.run(command, check=False).returncode
     return 0
 
 
