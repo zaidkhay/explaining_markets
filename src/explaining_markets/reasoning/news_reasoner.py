@@ -1,12 +1,12 @@
-"""Structured article reasoning with a deterministic fallback and optional OpenAI JSON-schema mode."""
+"""Structured article reasoning with deterministic fallback and optional OpenRouter JSON-schema mode."""
 from __future__ import annotations
 
-import json
 import os
 import re
 from typing import Iterable
 
 from explaining_markets.news_ranking import RankedNewsRecord
+from explaining_markets.reasoning.openrouter_client import openrouter_api_key, openrouter_model, structured_json
 from explaining_markets.reasoning.schemas import ReasonedNewsItem
 
 _TOPICS = {
@@ -73,14 +73,23 @@ def _lexical_direction(text: str) -> float:
 class NewsReasoner:
     """Reason about already-ranked articles; never fetches additional information."""
 
-    def __init__(self, *, use_openai: bool | None = None, model: str | None = None) -> None:
-        self.use_openai = bool(os.getenv("OPENAI_API_KEY")) if use_openai is None else bool(use_openai)
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5-mini")
+    def __init__(
+        self,
+        *,
+        use_openrouter: bool | None = None,
+        use_openai: bool | None = None,
+        model: str | None = None,
+    ) -> None:
+        # ``use_openai`` is retained as a backwards-compatible alias used by
+        # older tests/call sites; remote V3 reasoning now routes to OpenRouter.
+        requested = use_openrouter if use_openrouter is not None else use_openai
+        self.use_openrouter = bool(openrouter_api_key()) if requested is None else bool(requested)
+        self.model = model or openrouter_model()
 
     def reason(self, ranked: RankedNewsRecord, *, relation: str) -> ReasonedNewsItem:
-        if self.use_openai:
+        if self.use_openrouter:
             try:
-                return self._openai_reason(ranked, relation=relation)
+                return self._openrouter_reason(ranked, relation=relation)
             except Exception:
                 pass
         return self._deterministic_reason(ranked, relation=relation)
@@ -118,9 +127,7 @@ class NewsReasoner:
             concise_rationale=rationale,
         )
 
-    def _openai_reason(self, ranked: RankedNewsRecord, *, relation: str) -> ReasonedNewsItem:
-        from openai import OpenAI
-
+    def _openrouter_reason(self, ranked: RankedNewsRecord, *, relation: str) -> ReasonedNewsItem:
         record = ranked.record
         packet = {
             "relation": relation,
@@ -136,16 +143,17 @@ class NewsReasoner:
                 "source_quality": ranked.source_quality,
             },
         }
-        client = OpenAI()
-        response = client.responses.create(
+        data = structured_json(
+            schema_name="reasoned_news_item",
+            schema=_ARTICLE_SCHEMA,
             model=self.model,
-            input=[
-                {"role": "system", "content": "You extract auditable market-event features from ONE pre-cutoff news item. Do not predict a competition percentile. Return only the requested structured scores and a short evidence-based rationale; do not provide hidden chain-of-thought."},
-                {"role": "user", "content": json.dumps(packet, sort_keys=True)},
-            ],
-            text={"format": {"type": "json_schema", "name": "reasoned_news_item", "schema": _ARTICLE_SCHEMA, "strict": True}},
+            system_prompt=(
+                "You extract auditable market-event features from ONE pre-cutoff news item. "
+                "Do not predict a competition percentile. Return only the requested structured "
+                "scores and a short evidence-based rationale; do not provide hidden chain-of-thought."
+            ),
+            user_payload=packet,
         )
-        data = json.loads(response.output_text)
         return ReasonedNewsItem(
             headline=record.headline,
             published_at=record.published_at,
