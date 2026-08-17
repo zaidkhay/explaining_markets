@@ -17,6 +17,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
+from explaining_markets.backfill_planner import (
+    BackfillOutcome,
+    BackfillPlan,
+    PriceFetcher,
+    format_backfill_stats,
+    plan_price_backfill,
+    run_price_backfill,
+)
 from explaining_markets.features_v3 import MODEL_FEATURE_NAMES_V3, build_feature_vector_v3
 from explaining_markets.historical import HistoricalEvent, load_historical_events
 from explaining_markets.historical_v3_enrichment import (
@@ -49,6 +57,11 @@ from explaining_markets.providers.free_historical import (
     fmp_price_records,
     tiingo_price_records,
     twelve_data_price_records,
+)
+from explaining_markets.providers.retry_policy import RetryPolicy, UnsupportedSymbolError
+from explaining_markets.providers.unsupported_cache import (
+    UnsupportedSymbolCache,
+    default_unsupported_path,
 )
 from explaining_markets.reasoning.event_reasoner import EventReasoner
 from explaining_markets.reasoning.news_reasoner import NewsReasoner
@@ -87,6 +100,11 @@ class FreeProviderEnrichmentReport:
     twelve_data_blocked_reason: str | None = None
     fmp_blocked_reason: str | None = None
     finnhub_blocked_reason: str | None = None
+    # Phase A: prioritized-backfill diagnostics and per-provider accounting.
+    backfill_plan: dict | None = None
+    backfill_outcome: dict | None = None
+    provider_stats: dict | None = None
+    backfill_summary: str | None = None
 
     @property
     def cache_hits(self) -> int:
@@ -123,6 +141,10 @@ class FreeProviderEnrichmentReport:
             "twelve_data_blocked_reason": self.twelve_data_blocked_reason,
             "fmp_blocked_reason": self.fmp_blocked_reason,
             "finnhub_blocked_reason": self.finnhub_blocked_reason,
+            "backfill_plan": self.backfill_plan,
+            "backfill_outcome": self.backfill_outcome,
+            "provider_stats": self.provider_stats,
+            "backfill_summary": self.backfill_summary,
         }
 
 
@@ -199,6 +221,10 @@ def enrich_training_rows_free(
     reasoning_mode: str = "deterministic",
     request_timeout: float = 10.0,
     progress_every: int = 500,
+    retry_unsupported: bool = False,
+    price_retry_attempts: int = 3,
+    max_price_symbols: int | None = None,
+    plan_only: bool = False,
 ) -> FreeProviderEnrichmentReport:
     seed_rows = load_training_rows(rows_path)
     events = load_historical_events(historical_dir)
@@ -218,12 +244,19 @@ def enrich_training_rows_free(
         if tiingo_api_key
         else None
     )
+    unsupported_cache = UnsupportedSymbolCache(
+        default_unsupported_path(cache_dir, "twelve_data"),
+        provider="twelve_data",
+        retry_unsupported=retry_unsupported,
+    )
     twelve_data = (
         TwelveDataHistoricalClient(
             twelve_data_api_key,
             cache=cache,
             max_api_calls=twelve_data_max_api_calls,
             timeout=request_timeout,
+            retry_policy=RetryPolicy(max_attempts=max(1, int(price_retry_attempts))),
+            unsupported_cache=unsupported_cache,
         )
         if twelve_data_api_key
         else None
@@ -260,6 +293,49 @@ def enrich_training_rows_free(
         else None
     )
 
+    # ---- Phase A: prioritized price backfill -----------------------------
+    # Plan first (zero API calls), then fetch the highest-row-count symbols
+    # that are neither already cached nor known-unsupported. The row loop below
+    # performs NO network price calls, so a 6k-row pass cannot rediscover the
+    # same missing ticker thousands of times.
+    plan: BackfillPlan = plan_price_backfill(
+        seed_rows, events, cache=cache, unsupported_cache=unsupported_cache
+    )
+    print(
+        f"[V3_BACKFILL] rows={plan.total_rows} tickers={plan.unique_tickers} "
+        f"covered={plan.tickers_already_covered} needing={plan.tickers_needing_prices} "
+        f"unsupported_skipped={plan.tickers_skipped_unsupported} "
+        f"row_coverage={plan.total_rows_already_covered / plan.total_rows:.1%}"
+        if plan.total_rows
+        else "[V3_BACKFILL] no rows",
+        flush=True,
+    )
+
+    price_fetchers: list[PriceFetcher] = []
+    if tiingo is not None:
+        price_fetchers.append(PriceFetcher("tiingo", tiingo, "tiingo_prices"))
+    if twelve_data is not None:
+        price_fetchers.append(PriceFetcher("twelve_data", twelve_data, "twelve_data_prices"))
+    if fmp is not None:
+        price_fetchers.append(PriceFetcher("fmp", fmp, "fmp_prices"))
+
+    outcome = BackfillOutcome()
+    if price_fetchers and not plan_only:
+        outcome = run_price_backfill(
+            plan,
+            price_fetchers,
+            unsupported_cache=unsupported_cache,
+            max_symbols=max_price_symbols,
+        )
+        print(
+            f"[V3_BACKFILL] fetched={len(outcome.successful_tickers)} "
+            f"unsupported={len(outcome.unsupported_tickers)} "
+            f"transient_failed={len(outcome.transient_failed_tickers)} "
+            f"rows_unlocked={outcome.rows_unlocked} stopped={outcome.stopped_reason}",
+            flush=True,
+        )
+    prefetched_prices: dict[str, tuple[PriceRecord, ...]] = dict(outcome.prices_by_ticker)
+
     remote_reasoning = reasoning_mode == "openrouter"
     news_reasoner = NewsReasoner(use_openrouter=remote_reasoning)
     event_reasoner = EventReasoner(use_openrouter=remote_reasoning)
@@ -274,14 +350,11 @@ def enrich_training_rows_free(
             except Exception as exc:
                 print(f"[V3_ENRICH] Alpha news fallback skipped {start.date()}..{end.date()}: {type(exc).__name__}", flush=True)
 
-    tiingo_prices_by_ticker: dict[str, tuple[PriceRecord, ...]] = {}
-    twelve_data_prices_by_ticker: dict[str, tuple[PriceRecord, ...]] = {}
-    fmp_prices_by_ticker: dict[str, tuple[PriceRecord, ...]] = {}
+    # Per-ticker memo of normalized cached prices, so a ticker's cache files are
+    # parsed once per run instead of once per row.
+    resolved_price_cache: dict[str, tuple[PriceRecord, ...]] = {}
     finnhub_earnings_by_ticker: dict[str, list[dict] | None] = {}
     finnhub_news_by_ticker: dict[str, tuple[NewsRecord, ...]] = {}
-    tiingo_blocked = False
-    twelve_data_blocked = False
-    fmp_blocked = False
     finnhub_blocked = False
     alpha_blocked = False
 
@@ -344,74 +417,31 @@ def enrich_training_rows_free(
             if earnings is not None:
                 eps_matches += 1
 
-            # Prices: local CSV -> Tiingo -> Twelve Data -> FMP -> optional Alpha premium.
+            # Prices: local CSV -> prioritized prefetch -> normalized cache.
+            # No network call happens here; the backfill pass above owns all
+            # price requests, so this loop is pure CPU over cached data.
             prices = local_prices.prices(ticker)
             first, last = bounds.get(ticker, (cutoff, cutoff))
             start = first - timedelta(days=5 * 366 + 45)
             end = last
 
-            if not prices and tiingo is not None:
-                if ticker not in tiingo_prices_by_ticker:
-                    fetched: tuple[PriceRecord, ...] = ()
-                    if not tiingo_blocked:
-                        try:
-                            fetched = tiingo_price_records(
-                                tiingo.prices_payload(ticker, start=start, end=end),
-                                ticker,
-                                retrieved_at=_utcnow(),
-                            )
-                        except (ProviderBudgetExhausted, ProviderUnavailable) as exc:
-                            tiingo_blocked = True
-                            print(f"[V3_ENRICH] Tiingo switched to cache-only: {str(exc)[:300]}", flush=True)
-                        except Exception as exc:
-                            print(f"[V3_ENRICH] Tiingo prices unavailable {ticker}: {type(exc).__name__}: {str(exc)[:220]}", flush=True)
-                    if not fetched:
-                        fetched = _cached_tiingo_prices(cache, ticker, start, end)
-                    tiingo_prices_by_ticker[ticker] = fetched
-                prices = tiingo_prices_by_ticker.get(ticker, ())
+            if not prices:
+                prices = prefetched_prices.get(ticker, ())
 
-            if not prices and twelve_data is not None:
-                if ticker not in twelve_data_prices_by_ticker:
-                    fetched = ()
-                    if not twelve_data_blocked:
-                        try:
-                            fetched = twelve_data_price_records(
-                                twelve_data.prices_payload(ticker, start=start, end=end),
-                                ticker,
-                                retrieved_at=_utcnow(),
-                            )
-                        except ProviderBudgetExhausted as exc:
-                            twelve_data_blocked = True
-                            print(f"[V3_ENRICH] Twelve Data switched to cache-only: {str(exc)[:300]}", flush=True)
-                        except ProviderUnavailable as exc:
-                            twelve_data_blocked = True
-                            print(f"[V3_ENRICH] Twelve Data unavailable; cache-only: {str(exc)[:300]}", flush=True)
-                        except Exception as exc:
-                            print(f"[V3_ENRICH] Twelve Data prices unavailable {ticker}: {type(exc).__name__}: {str(exc)[:220]}", flush=True)
-                    if not fetched:
-                        fetched = _cached_twelve_data_prices(cache, ticker, start, end)
-                    twelve_data_prices_by_ticker[ticker] = fetched
-                prices = twelve_data_prices_by_ticker.get(ticker, ())
-
-            if not prices and fmp is not None:
-                if ticker not in fmp_prices_by_ticker:
-                    fetched = ()
-                    if not fmp_blocked:
-                        try:
-                            fetched = fmp_price_records(
-                                fmp.prices_payload(ticker, start=start, end=end),
-                                ticker,
-                                retrieved_at=_utcnow(),
-                            )
-                        except (ProviderBudgetExhausted, ProviderUnavailable) as exc:
-                            fmp_blocked = True
-                            print(f"[V3_ENRICH] FMP switched to cache-only: {str(exc)[:300]}", flush=True)
-                        except Exception as exc:
-                            print(f"[V3_ENRICH] FMP prices unavailable {ticker}: {type(exc).__name__}: {str(exc)[:220]}", flush=True)
-                    if not fetched:
-                        fetched = _cached_fmp_prices(cache, ticker, start, end)
-                    fmp_prices_by_ticker[ticker] = fetched
-                prices = fmp_prices_by_ticker.get(ticker, ())
+            if not prices and ticker not in resolved_price_cache:
+                for reader in (
+                    _cached_tiingo_prices,
+                    _cached_twelve_data_prices,
+                    _cached_fmp_prices,
+                ):
+                    cached_rows = reader(cache, ticker, start, end)
+                    if cached_rows:
+                        resolved_price_cache[ticker] = cached_rows
+                        break
+                else:
+                    resolved_price_cache[ticker] = ()
+            if not prices:
+                prices = resolved_price_cache.get(ticker, ())
 
             if not prices and use_alpha_adjusted_prices and alpha is not None and not alpha_blocked:
                 try:
@@ -521,12 +551,26 @@ def enrich_training_rows_free(
                 )
             )
     finally:
+        unsupported_cache.save()
         for client in (tiingo, twelve_data, fmp, finnhub, alpha):
             if client is not None:
                 client.close()
 
     output = write_training_rows(enriched, output_path)
     coverage = training_data_report(enriched, archive_seed_only=False).family_coverage
+
+    price_clients = [c for c in (tiingo, twelve_data, fmp) if c is not None]
+    for client in price_clients:
+        client.stats.rows_unlocked = outcome.rows_unlocked
+        client.stats.symbols_considered = plan.unique_tickers
+        client.stats.symbols_already_covered = plan.tickers_already_covered
+        client.stats.check_invariants()
+    coverage_after = coverage.get("price_5y")
+    backfill_summary = format_backfill_stats(
+        plan, outcome, [c.stats for c in price_clients], coverage_after=coverage_after
+    )
+    print("\n" + backfill_summary, flush=True)
+
     return FreeProviderEnrichmentReport(
         rows=len(enriched),
         eps_matches=eps_matches,
@@ -550,4 +594,8 @@ def enrich_training_rows_free(
         twelve_data_blocked_reason=twelve_data.unavailable_reason if twelve_data else None,
         fmp_blocked_reason=fmp.unavailable_reason if fmp else None,
         finnhub_blocked_reason=finnhub.unavailable_reason if finnhub else None,
+        backfill_plan=plan.as_dict(),
+        backfill_outcome=outcome.as_dict(),
+        provider_stats={c.vendor: c.stats.as_dict() for c in price_clients},
+        backfill_summary=backfill_summary,
     )

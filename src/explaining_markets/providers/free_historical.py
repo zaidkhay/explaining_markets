@@ -8,12 +8,24 @@ zero-valued records.
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 import httpx
 
 from explaining_markets.historical import HistoricalEvent
+from explaining_markets.providers.retry_policy import (
+    RetryPolicy,
+    TransientProviderError,
+    UnsupportedSymbolError,
+    classify_provider_message,
+    classify_status,
+    is_timeout_exception,
+    is_transient_exception,
+    parse_retry_after,
+)
+from explaining_markets.providers.unsupported_cache import UnsupportedSymbolCache
 from explaining_markets.v3_records import EarningsRecord, NewsRecord, PriceRecord
 
 _TIINGO_BASE = "https://api.tiingo.com/tiingo/daily"
@@ -30,11 +42,113 @@ class ProviderUnavailable(RuntimeError):
     pass
 
 
+@dataclass
+class ProviderStats:
+    """Per-run provider accounting for the backfill statistics report.
+
+    ``symbols_requested`` counts distinct symbol fetch operations that reached
+    the network path, while ``request_attempts`` counts individual HTTP
+    attempts (so a retried fetch contributes one request and several attempts).
+    Every attempt consumes the API budget, because the provider's own quota
+    counts attempts, not successes.
+    """
+
+    vendor: str
+    symbols_considered: int = 0
+    symbols_already_covered: int = 0
+    symbols_skipped_unsupported: int = 0
+    symbols_requested: int = 0
+    request_attempts: int = 0
+    successful_symbols: int = 0
+    transient_failures: int = 0
+    permanent_failures: int = 0
+    timeout_failures: int = 0
+    rate_limit_failures: int = 0
+    retries_performed: int = 0
+    cache_hits: int = 0
+    budget_exhausted_events: int = 0
+    rows_unlocked: int = 0
+    max_api_calls: int = 0
+    unsupported_recorded: tuple[str, ...] = ()
+
+    @property
+    def budget_used(self) -> int:
+        return self.request_attempts
+
+    @property
+    def budget_remaining(self) -> int:
+        return max(0, self.max_api_calls - self.request_attempts)
+
+    def as_dict(self) -> dict:
+        return {
+            "vendor": self.vendor,
+            "symbols_considered": self.symbols_considered,
+            "symbols_already_covered": self.symbols_already_covered,
+            "symbols_skipped_unsupported": self.symbols_skipped_unsupported,
+            "symbols_requested": self.symbols_requested,
+            "request_attempts": self.request_attempts,
+            "successful_symbols": self.successful_symbols,
+            "transient_failures": self.transient_failures,
+            "permanent_failures": self.permanent_failures,
+            "timeout_failures": self.timeout_failures,
+            "rate_limit_failures": self.rate_limit_failures,
+            "retries_performed": self.retries_performed,
+            "cache_hits": self.cache_hits,
+            "budget_exhausted_events": self.budget_exhausted_events,
+            "rows_unlocked": self.rows_unlocked,
+            "api_budget": self.max_api_calls,
+            "api_budget_used": self.budget_used,
+            "api_budget_remaining": self.budget_remaining,
+            "unsupported_recorded": list(self.unsupported_recorded),
+        }
+
+    def check_invariants(self) -> None:
+        """Assert the accounting identities the backfill report depends on."""
+        if self.symbols_requested != (
+            self.successful_symbols + self.transient_failures + self.permanent_failures
+        ):
+            raise AssertionError(
+                f"{self.vendor} accounting mismatch: requested={self.symbols_requested} "
+                f"success={self.successful_symbols} transient={self.transient_failures} "
+                f"permanent={self.permanent_failures}"
+            )
+        if self.request_attempts < self.symbols_requested:
+            raise AssertionError(
+                f"{self.vendor} attempts ({self.request_attempts}) < requested "
+                f"({self.symbols_requested})"
+            )
+        if self.request_attempts > self.max_api_calls:
+            raise AssertionError(
+                f"{self.vendor} exceeded API budget: {self.request_attempts} > {self.max_api_calls}"
+            )
+
+
 def _parse_iso_datetime(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _safe_response_text(response: httpx.Response, *, limit: int = 300) -> str:
+    """Best-effort provider error text from a failed response.
+
+    Prefers a JSON ``message``/``error`` field, falls back to a bounded slice
+    of the body. Never raises, so error handling cannot itself fail.
+    """
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            for key in ("message", "error", "Error Message", "detail"):
+                value = payload.get(key)
+                if value:
+                    return str(value)[:limit]
+        return str(payload)[:limit]
+    except Exception:  # noqa: BLE001 - error path must never raise
+        try:
+            return response.text[:limit]
+        except Exception:  # noqa: BLE001
+            return f"HTTP {response.status_code}"
 
 
 def _is_run_wide_provider_error(message: str) -> bool:
@@ -65,6 +179,8 @@ class _CachedJsonClient:
         client: httpx.Client | None,
         progress: Callable[[str], None] | None,
         vendor: str,
+        retry_policy: RetryPolicy | None = None,
+        unsupported_cache: UnsupportedSymbolCache | None = None,
     ) -> None:
         self.cache = cache
         self.max_api_calls = max(0, int(max_api_calls))
@@ -75,6 +191,9 @@ class _CachedJsonClient:
         self.cache_hits = 0
         self.failures = 0
         self.unavailable_reason: str | None = None
+        self.retry_policy = retry_policy or RetryPolicy()
+        self.unsupported_cache = unsupported_cache
+        self.stats = ProviderStats(vendor=vendor, max_api_calls=self.max_api_calls)
         self._last_request_started: float | None = None
         self._owns_client = client is None
         self.client = client or httpx.Client(timeout=self.timeout)
@@ -91,49 +210,189 @@ class _CachedJsonClient:
         if remaining > 0:
             time.sleep(remaining)
 
-    def _request(self, *, namespace: str, cache_key: str, url: str, params: dict[str, Any], headers: dict[str, str]) -> Any:
+    def _request(
+        self,
+        *,
+        namespace: str,
+        cache_key: str,
+        url: str,
+        params: dict[str, Any],
+        headers: dict[str, str],
+        ticker: str | None = None,
+    ) -> Any:
+        """Fetch with bounded retries for transient faults only.
+
+        Retry semantics:
+        * network timeouts / transport errors / HTTP 408,429,5xx -> retried
+        * HTTP 429 honors ``Retry-After`` when numeric, else exponential backoff
+        * provider "symbol not found"/plan messages -> ``UnsupportedSymbolError``
+          (recorded in the unsupported cache, never retried)
+        * run-wide quota messages -> circuit breaker via ``unavailable_reason``
+
+        Every HTTP attempt consumes the per-run budget, so retries can never
+        exceed ``max_api_calls``.
+        """
         cached = self.cache.get(namespace, cache_key)
         if cached is not None:
             self.cache_hits += 1
+            self.stats.cache_hits += 1
             return cached
         if self.unavailable_reason:
             raise ProviderUnavailable(self.unavailable_reason)
-        if self.api_calls >= self.max_api_calls:
-            raise ProviderBudgetExhausted(f"{self.vendor} per-run API budget exhausted ({self.max_api_calls})")
 
-        self._pace()
-        self.api_calls += 1
-        self._last_request_started = time.monotonic()
-        self.progress(
-            f"[V3_ENRICH] {self.vendor} {namespace}:{cache_key} "
-            f"calls={self.api_calls}/{self.max_api_calls}"
-        )
-        try:
-            response = self.client.get(url, params=params, headers=headers, timeout=self.timeout)
-            if response.status_code == 429:
-                self.unavailable_reason = f"{self.vendor} rate limit reached (HTTP 429)"
-                raise ProviderUnavailable(self.unavailable_reason)
-            response.raise_for_status()
-            payload = response.json()
-        except ProviderUnavailable:
-            self.failures += 1
-            raise
-        except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
-            self.failures += 1
-            raise RuntimeError(f"{self.vendor} request failed: {type(exc).__name__}") from exc
+        symbol = (ticker or cache_key.split("|", 1)[0]).upper()
+        if self.unsupported_cache is not None and self.unsupported_cache.should_skip(symbol):
+            entry = self.unsupported_cache.entry(symbol)
+            self.stats.symbols_skipped_unsupported += 1
+            self.progress(f"[V3_ENRICH] {self.vendor} skip unsupported ticker={symbol}")
+            raise UnsupportedSymbolError(
+                f"{self.vendor}: {symbol} is a known unsupported symbol",
+                ticker=symbol,
+                vendor=self.vendor,
+                reason=entry.reason if entry else "unsupported_symbol",
+                status_code=entry.status_code if entry else None,
+                provider_message=entry.provider_message if entry else None,
+            )
 
-        if isinstance(payload, dict):
-            error = payload.get("error") or payload.get("message") or payload.get("Error Message")
-            status = str(payload.get("status") or "").lower()
-            if error and (len(payload) <= 4 or status == "error"):
-                message = f"{self.vendor}: {error}"
+        self.stats.symbols_requested += 1
+        attempt = 0
+        while True:
+            attempt += 1
+            if self.api_calls >= self.max_api_calls:
+                self.stats.budget_exhausted_events += 1
+                if attempt > 1:
+                    # Budget ran out mid-retry: the fetch failed transiently.
+                    self.stats.transient_failures += 1
+                    self.failures += 1
+                    raise TransientProviderError(
+                        f"{self.vendor} budget exhausted while retrying {symbol}"
+                    )
+                self.stats.symbols_requested -= 1
+                raise ProviderBudgetExhausted(
+                    f"{self.vendor} per-run API budget exhausted ({self.max_api_calls})"
+                )
+
+            self._pace()
+            self.api_calls += 1
+            self.stats.request_attempts += 1
+            self._last_request_started = time.monotonic()
+            self.progress(
+                f"[V3_ENRICH] {self.vendor} {namespace}:{cache_key} "
+                f"calls={self.api_calls}/{self.max_api_calls}"
+            )
+
+            retry_after: float | None = None
+            failure_reason: str | None = None
+            try:
+                response = self.client.get(url, params=params, headers=headers, timeout=self.timeout)
+                status_class = classify_status(response.status_code)
+                if response.status_code >= 400:
+                    if status_class == "rate_limit":
+                        self.stats.rate_limit_failures += 1
+                        retry_after = parse_retry_after(response.headers.get("Retry-After"))
+                        failure_reason = "HTTP 429"
+                    elif status_class == "transient":
+                        failure_reason = f"HTTP {response.status_code}"
+                    else:
+                        # Permanent HTTP status: classify the body for symbol vs plan.
+                        self._fail_permanent(
+                            symbol,
+                            status_code=response.status_code,
+                            message=_safe_response_text(response),
+                        )
+                else:
+                    payload = response.json()
+                    self._check_payload_error(payload, symbol=symbol, status_code=response.status_code)
+                    self.cache.put(namespace, cache_key, payload)
+                    self.stats.successful_symbols += 1
+                    return payload
+            except (UnsupportedSymbolError, ProviderUnavailable):
+                raise
+            except ValueError as exc:
+                # Malformed JSON: treat as transient (proxies truncate bodies).
+                failure_reason = type(exc).__name__
+            except Exception as exc:  # noqa: BLE001 - classified immediately below
+                if not is_transient_exception(exc):
+                    self.stats.permanent_failures += 1
+                    self.failures += 1
+                    raise RuntimeError(f"{self.vendor} request failed: {type(exc).__name__}") from exc
+                if is_timeout_exception(exc):
+                    self.stats.timeout_failures += 1
+                failure_reason = type(exc).__name__
+
+            # ---- transient path: retry if attempts remain -----------------
+            if not self.retry_policy.should_retry(attempt):
+                self.stats.transient_failures += 1
                 self.failures += 1
-                if _is_run_wide_provider_error(str(error)):
-                    self.unavailable_reason = message
-                    raise ProviderUnavailable(message)
-                raise RuntimeError(message)
-        self.cache.put(namespace, cache_key, payload)
-        return payload
+                if failure_reason == "HTTP 429":
+                    # Repeated 429s are a run-wide signal, not a symbol problem.
+                    self.unavailable_reason = f"{self.vendor} rate limit reached (HTTP 429)"
+                    raise ProviderUnavailable(self.unavailable_reason)
+                raise TransientProviderError(
+                    f"{self.vendor} request failed after {attempt} attempt(s) "
+                    f"for {symbol}: {failure_reason}"
+                )
+            self.stats.retries_performed += 1
+            self.progress(
+                f"[V3_ENRICH] {self.vendor} retry ticker={symbol} "
+                f"attempt={attempt + 1}/{self.retry_policy.max_attempts} reason={failure_reason}"
+            )
+            self.retry_policy.wait(attempt, retry_after=retry_after)
+
+    def _fail_permanent(self, symbol: str, *, status_code: int | None, message: str | None) -> None:
+        """Raise a permanent failure; cache it only when confidently classified.
+
+        An ambiguous provider error (no recognizable "symbol not found" or plan
+        wording) raises a plain ``RuntimeError`` and is NOT written to the
+        unsupported cache — guessing would permanently blacklist a good symbol.
+        """
+        self.stats.permanent_failures += 1
+        self.failures += 1
+        reason = classify_provider_message(message or "")
+        if reason is None and status_code in {400, 401, 403, 404}:
+            # Symbol-scoped 4xx with an unhelpful body is still permanent for
+            # this symbol; label it by status rather than inventing wording.
+            reason = "entitlement" if status_code in {401, 403} else "unsupported_symbol"
+        if reason is None:
+            raise RuntimeError(f"{self.vendor}: {message or f'HTTP {status_code}'}")
+        if self.unsupported_cache is not None:
+            self.unsupported_cache.record(
+                symbol,
+                reason=reason,
+                status_code=status_code,
+                provider_message=message,
+            )
+            self.stats.unsupported_recorded = (*self.stats.unsupported_recorded, symbol)
+        raise UnsupportedSymbolError(
+            f"{self.vendor}: {message or f'HTTP {status_code}'}",
+            ticker=symbol,
+            vendor=self.vendor,
+            reason=reason,
+            status_code=status_code,
+            provider_message=message,
+        )
+
+    def _check_payload_error(self, payload: Any, *, symbol: str, status_code: int | None) -> None:
+        """Raise for provider-level errors embedded in a HTTP 200 body."""
+        if not isinstance(payload, dict):
+            return
+        error = payload.get("error") or payload.get("message") or payload.get("Error Message")
+        status = str(payload.get("status") or "").lower()
+        if not error or not (len(payload) <= 4 or status == "error"):
+            return
+        text = str(error)
+        if _is_run_wide_provider_error(text):
+            message = f"{self.vendor}: {error}"
+            self.stats.rate_limit_failures += 1
+            self.failures += 1
+            self.unavailable_reason = message
+            raise ProviderUnavailable(message)
+        code = payload.get("code")
+        self._fail_permanent(
+            symbol,
+            status_code=int(code) if isinstance(code, (int, float)) else status_code,
+            message=text,
+        )
 
 
 class TiingoHistoricalClient(_CachedJsonClient):
@@ -192,6 +451,9 @@ class TwelveDataHistoricalClient(_CachedJsonClient):
         timeout: float = 15.0,
         client: httpx.Client | None = None,
         progress: Callable[[str], None] | None = None,
+        retry_policy: RetryPolicy | None = None,
+        unsupported_cache: UnsupportedSymbolCache | None = None,
+        min_request_interval: float = 7.6,
     ) -> None:
         if not api_key:
             raise ValueError("TWELVE_DATA_API_KEY is required")
@@ -199,10 +461,12 @@ class TwelveDataHistoricalClient(_CachedJsonClient):
             cache=cache,
             max_api_calls=max_api_calls,
             timeout=timeout,
-            min_request_interval=7.6,
+            min_request_interval=min_request_interval,
             client=client,
             progress=progress,
             vendor="twelve_data",
+            retry_policy=retry_policy,
+            unsupported_cache=unsupported_cache,
         )
         self.api_key = api_key
 
@@ -212,6 +476,7 @@ class TwelveDataHistoricalClient(_CachedJsonClient):
         payload = self._request(
             namespace="twelve_data_prices",
             cache_key=key,
+            ticker=symbol,
             url=f"{_TWELVE_DATA_BASE}/time_series",
             params={
                 "symbol": symbol,
