@@ -1,12 +1,13 @@
 """Modal deployment for the Explaining Markets starter.
 
 This is orchestration only: verify/ACK/dedupe/spawn, prediction, submission,
-and a non-public V3 feed diagnostic. Business logic stays under
+and non-public feed/production diagnostics. Business logic stays under
 ``src/explaining_markets``.
 
-Deploy:    uv run modal deploy modal_app.py
-Dev/local: uv run modal serve modal_app.py
-Diagnostic: uv run modal run modal_app.py::check_v3_feed --ticker AAPL
+Deploy:      uv run modal deploy modal_app.py
+Dev/local:   uv run modal serve modal_app.py
+Feed check:  uv run modal run modal_app.py::check_v3_feed --ticker AAPL
+Prod check:  uv run modal run modal_app.py::check_production
 """
 
 import modal
@@ -96,8 +97,11 @@ def check_v3_feed(ticker: str):
     result = {
         "ticker": ticker,
         "cutoff": cutoff.isoformat(),
-        "news_secret_configured": bool(os.getenv("ALPHAVANTAGE_API_KEY") or os.getenv("NEWS_API_KEY")),
-        "openai_secret_configured": bool(os.getenv("OPENAI_API_KEY")),
+        "alpha_vantage_configured": bool(os.getenv("ALPHAVANTAGE_API_KEY")),
+        "finnhub_configured": bool(os.getenv("FINNHUB_API_KEY") or os.getenv("FINNHUBB_API")),
+        "twelve_data_configured": bool(os.getenv("TWELVE_DATA_API_KEY")),
+        "tiingo_configured": bool(os.getenv("TINGO_API") or os.getenv("TIINGO_API_KEY")),
+        "openrouter_configured": bool(os.getenv("OPEN_ROUTER_API_KEY")),
         "historical_cache_mounted": Path(os.environ["V3_HISTORY_CACHE_PATH"]).exists(),
         "company_news_count": diag["company_news_count"],
         "peer_news_count": diag["peer_news_count"],
@@ -110,6 +114,35 @@ def check_v3_feed(ticker: str):
     }
     print("[V3_MODAL_DIAGNOSTIC] " + " ".join(f"{key}={value}" for key, value in result.items()))
     return result
+
+
+@app.function(image=image, secrets=secrets, volumes={"/v3-data": v3_data}, timeout=120)
+def check_production():
+    """Non-submitting deployed production diagnostic."""
+    import os
+
+    os.environ.setdefault("V3_HISTORY_CACHE_PATH", "/v3-data/company_history.sqlite")
+    os.environ.setdefault("V3_EVIDENCE_DIR", "/v3-data/evidence")
+
+    from explaining_markets.production_runtime import production_scenario_report
+
+    report = production_scenario_report()
+    report["openrouter_optional_configured"] = bool(os.getenv("OPEN_ROUTER_API_KEY"))
+    report["em_api_configured"] = bool(os.getenv("EM_API_KEY"))
+    report["webhook_secret_configured"] = bool(os.getenv("EM_WEBHOOK_SECRET"))
+    status = "PASS" if (
+        report["calibration_loaded"]
+        and report["ordered"]
+        and report["meaningfully_differentiated"]
+    ) else "FAIL"
+    report["status"] = status
+    print(
+        "[PROD_MODAL_DIAGNOSTIC] "
+        f"status={status} model={report['model_version']} "
+        f"calibration={report['calibration_version']} spread={report['spread']:.4f} "
+        f"ordered={report['ordered']} openrouter_optional={report['openrouter_optional_configured']}"
+    )
+    return report
 
 
 @app.function(image=image, secrets=secrets)

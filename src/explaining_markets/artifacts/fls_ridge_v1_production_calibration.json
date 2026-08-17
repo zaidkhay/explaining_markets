@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "model_version": "fls_ridge_v1",
+  "method": "affine_oos_scale_v1",
+  "version": "production_calibration_v1",
+  "center_raw": 0.5,
+  "center_target": 0.5,
+  "scale": 3.4255424879555734,
+  "bounds": [0.05, 0.95],
+  "validation_raw_std": 0.04378868471998511,
+  "target_output_std": 0.15,
+  "target_percentile_theoretical_std": 0.28867513459481287,
+  "source": "fls_ridge_v1 2026Q1 out-of-sample validation dispersion from artifact training_metadata; Ridge alpha=10 selected on validation official delta-R2",
+  "rationale": "Conservative affine rescaling around 0.50. The 0.15 target output standard deviation is materially wider than the raw 0.0437887 validation dispersion but remains well below the 0.288675 standard deviation of a uniform percentile target. Affine scaling preserves Pearson and Spearman before clipping and avoids the more aggressive 0.01-0.99 empirical-CDF stretch."
+}

@@ -1,8 +1,10 @@
 """Live prediction entry point.
 
-Production selection is promotion-gated V3 -> fls_ridge_v1 -> heuristic ->
-0.50. Every fallback is logged. Synthetic TEST events remain neutral in the
-Modal worker before this function is called.
+Production selection is promotion-gated V3 -> calibrated fls_ridge_v1 ->
+heuristic -> 0.50.  The V1 ranking model remains unchanged; only a validated,
+monotonic affine production calibration is applied to its raw score. Every
+fallback is logged. Synthetic TEST events remain neutral in the Modal worker
+before this function is called.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from explaining_markets.model import BaselineModel, CompanyHistoryRidgeModel, Fo
 
 _FETCH_TIMEOUT_SECONDS = 20.0
 _history_provider_cache: list = []
+_production_calibrator_cache: list = []
 
 
 def _history_provider():
@@ -28,6 +31,20 @@ def _history_provider():
             print(f"[PREDICT] history snapshot unavailable: {type(exc).__name__}")
             _history_provider_cache.append(None)
     return _history_provider_cache[0]
+
+
+def _production_calibrator(model_version: str):
+    if not _production_calibrator_cache:
+        try:
+            from explaining_markets.production_runtime import load_production_calibrator
+
+            _production_calibrator_cache.append(
+                load_production_calibrator(expected_model_version=model_version)
+            )
+        except Exception as exc:
+            print(f"[PROD_CALIBRATION] load failed error={type(exc).__name__}; using raw V1")
+            _production_calibrator_cache.append(None)
+    return _production_calibrator_cache[0]
 
 
 def _event_cutoff(event: dict) -> datetime:
@@ -175,13 +192,45 @@ def _predict_one(
 
     if isinstance(model, ForwardLookingRidgeModel):
         try:
-            prediction, fls = model.predict_with_features(disclosure)
+            raw_prediction, fls = model.predict_with_features(disclosure)
             values = fls.values
             vector = [float(values[name]) for name in model.feature_names]
             nonzero = sum(abs(x) > 1e-12 for x in vector)
             norm = sum(x * x for x in vector) ** 0.5
+            final_prediction = float(raw_prediction)
+            calibration_status = "raw"
+            try:
+                from explaining_markets.production_runtime import build_v1_explanation, persist_production_explanation
+
+                calibrator = _production_calibrator(model.model_version)
+                if calibrator is not None:
+                    final_prediction = calibrator.calibrate(raw_prediction)
+                    calibration_status = calibrator.version
+                packet = build_v1_explanation(
+                    model=model,
+                    features=fls,
+                    ticker=ticker,
+                    raw_prediction=raw_prediction,
+                    calibrator=calibrator,
+                    disclosure_available=bool(disclosure),
+                )
+                actual_cutoff = cutoff or datetime.now(timezone.utc)
+                live_event = event or {}
+                persist_production_explanation(
+                    packet=packet,
+                    event_id=str(live_event.get("event_id") or live_event.get("id") or "unknown"),
+                    cutoff=actual_cutoff,
+                    information_url_fetch_success=information_url_fetch_success,
+                )
+            except Exception as production_exc:
+                print(
+                    f"[PROD_PREDICT] ticker={ticker} calibration_or_explanation_error="
+                    f"{type(production_exc).__name__}; using raw_v1"
+                )
+                final_prediction = float(raw_prediction)
+                calibration_status = "raw_fallback"
             print(
-                "[PREDICT] "
+                "[PROD_PREDICT] "
                 f"ticker={ticker} model={model.model_version} "
                 f"disclosure_fact_count={len(disclosure)} "
                 f"non_zero_fls_feature_count={nonzero} fls_vector_norm={norm:.4f} "
@@ -192,9 +241,10 @@ def _predict_one(
                 f"other_fls_ratio={values['other_fls_ratio']:.3f} "
                 f"tone={values['signed_forward_tone']:.3f} "
                 f"guidance={values['guidance_direction']:.0f} "
-                f"prediction={prediction:.4f}"
+                f"raw={raw_prediction:.4f} submitted={final_prediction:.4f} "
+                f"calibration={calibration_status}"
             )
-            return _bounded(prediction)
+            return _bounded(final_prediction)
         except Exception as exc:
             print(f"[PREDICT] ticker={ticker} fls_ridge failed: {type(exc).__name__}; using heuristic")
             model = HeuristicFactModel()
