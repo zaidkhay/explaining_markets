@@ -75,8 +75,15 @@ def predict_and_submit(event: dict, webhook_id: str | None = None):
 
 @app.function(image=image, secrets=secrets, volumes={"/v3-data": v3_data}, timeout=120)
 def check_v3_feed(ticker: str):
-    """Non-public Modal diagnostic. Never prints credential values."""
+    """Non-public Modal diagnostic. Never prints credential values.
+
+    The diagnostic intentionally forces deterministic article/event reasoning.
+    OpenRouter configuration is reported separately, but no LLM calls are made
+    here so a free-model rate limit or long inference cannot consume the whole
+    120-second diagnostic budget.
+    """
     import os
+    from dataclasses import replace
     from datetime import datetime, timezone
     from pathlib import Path
 
@@ -86,10 +93,17 @@ def check_v3_feed(ticker: str):
     from explaining_markets.live_v3_context import build_live_v3_context, feed_diagnostics
     from explaining_markets.point_in_time_audit_v3 import audit_context
     from explaining_markets.providers.live_context import default_provider_bundle_from_env
+    from explaining_markets.reasoning.event_reasoner import EventReasoner
+    from explaining_markets.reasoning.news_reasoner import NewsReasoner
 
     ticker = ticker.upper()
     cutoff = datetime.now(timezone.utc)
     providers = default_provider_bundle_from_env()
+    providers = replace(
+        providers,
+        article_reasoner=NewsReasoner(use_openrouter=False),
+        event_reasoner=EventReasoner(use_openrouter=False),
+    )
     event = {"event_id": f"modal-diagnostic-{ticker}", "disclosure": []}
     context = build_live_v3_context(ticker=ticker, event=event, cutoff=cutoff, providers=providers)
     audit = audit_context(context)
@@ -102,6 +116,7 @@ def check_v3_feed(ticker: str):
         "twelve_data_configured": bool(os.getenv("TWELVE_DATA_API_KEY")),
         "tiingo_configured": bool(os.getenv("TINGO_API") or os.getenv("TIINGO_API_KEY")),
         "openrouter_configured": bool(os.getenv("OPEN_ROUTER_API_KEY")),
+        "reasoning_mode": "deterministic_diagnostic",
         "historical_cache_mounted": Path(os.environ["V3_HISTORY_CACHE_PATH"]).exists(),
         "company_news_count": diag["company_news_count"],
         "peer_news_count": diag["peer_news_count"],
