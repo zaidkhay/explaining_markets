@@ -9,6 +9,7 @@ before this function is called.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import httpx
@@ -59,6 +60,21 @@ def _event_cutoff(event: dict) -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _log_live_input(event: dict, tickers: list[str], disclosure: list[str], cutoff: datetime) -> None:
+    """Log the exact non-secret live inputs used by the scorer for diagnosis."""
+    payload = {
+        "event_id": str(event.get("event_id") or event.get("id") or "unknown"),
+        "event_type": str(event.get("event_type") or "UNKNOWN"),
+        "event_datetime": event.get("event_datetime"),
+        "cutoff": cutoff.isoformat(),
+        "tickers": tickers,
+        "information_url": event.get("information_url"),
+        "disclosure_fact_count": len(disclosure),
+        "disclosure": [str(item) for item in disclosure],
+    }
+    print("[LIVE_INPUT] " + json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+
+
 def predict(event: dict) -> list[dict]:
     tickers = [
         str(asset.get("identifier_value"))
@@ -78,6 +94,7 @@ def predict(event: dict) -> list[dict]:
 
     model = get_default_model()
     cutoff = _event_cutoff(event)
+    _log_live_input(event, tickers, disclosure, cutoff)
     out: list[dict] = []
     for ticker in tickers:
         prediction = _predict_one(
