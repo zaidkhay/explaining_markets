@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -161,24 +162,49 @@ class CompanyHistoryRidgeModel:
 
 
 def get_default_model():
-    """Production chain: promoted V3 -> fls_ridge_v1 -> heuristic -> baseline.
+    """Production chain: operator V3-lite -> promoted V3 -> V1 -> heuristic.
 
-    V2 remains available for historical experiments but never displaces V1.
-    V3 can displace V1 only when an artifact exists, validates against the
-    frozen V3 feature order, and records ``promoted: true`` from its predeclared
-    chronological evaluation gate.
+    The user explicitly authorized the V3-lite operator candidate for the
+    2026-08-19 live session after real-event logs showed V1 receiving non-empty
+    disclosures but producing an all-zero FLS vector and identical raw scores.
+
+    The candidate artifact is still marked ``promoted=false``.  We do not
+    rewrite the untouched-holdout gate; instead, the runtime requires explicit
+    operator-override metadata in the separate candidate artifact.  Set
+    ``PRODUCTION_MODEL=v1`` for an immediate rollback.
     """
-    try:
-        from explaining_markets.model_v3 import MultiSignalV3Model
+    requested = os.getenv("PRODUCTION_MODEL", "v3_lite_candidate").strip().lower()
 
-        v3 = MultiSignalV3Model()
-        if v3.promoted:
-            return v3
-        print("[MODEL] V3 artifact present but not promoted; using fls_ridge_v1")
-    except FileNotFoundError:
-        pass
-    except Exception as exc:
-        print(f"[MODEL] V3 artifact unavailable/invalid; using fls_ridge_v1: {type(exc).__name__}")
+    if requested not in {"v1", "fls_ridge_v1"}:
+        try:
+            from explaining_markets.model_v3_lite import V3LiteCandidateModel
+
+            candidate = V3LiteCandidateModel()
+            print(
+                "[MODEL] using operator-selected V3-lite candidate "
+                f"model={candidate.model_version} ablation={candidate.ablation}"
+            )
+            return candidate
+        except FileNotFoundError:
+            print("[MODEL] V3-lite candidate artifact missing; checking normal production chain")
+        except Exception as exc:
+            print(
+                "[MODEL] V3-lite candidate unavailable/invalid; checking normal production chain: "
+                f"{type(exc).__name__}"
+            )
+
+    if requested not in {"v1", "fls_ridge_v1"}:
+        try:
+            from explaining_markets.model_v3 import MultiSignalV3Model
+
+            v3 = MultiSignalV3Model()
+            if v3.promoted:
+                return v3
+            print("[MODEL] V3 artifact present but not promoted; using fls_ridge_v1")
+        except FileNotFoundError:
+            pass
+        except Exception as exc:
+            print(f"[MODEL] V3 artifact unavailable/invalid; using fls_ridge_v1: {type(exc).__name__}")
 
     try:
         return ForwardLookingRidgeModel()
