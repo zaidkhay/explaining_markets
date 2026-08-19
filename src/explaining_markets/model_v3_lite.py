@@ -1,10 +1,8 @@
 """Pure-Python runtime for an explicitly operator-selected V3-lite candidate.
 
-This is intentionally separate from the normal promotion path.  The artifact
+This is intentionally separate from the normal promotion path. The artifact
 must remain marked ``promoted: false`` and ``operator_override: true`` so we do
-not rewrite history or pretend the untouched-holdout gate passed.  Production
-may select this candidate only through the explicit model-selection logic in
-``model.get_default_model``.
+not pretend the untouched-holdout gate passed.
 """
 from __future__ import annotations
 
@@ -13,7 +11,8 @@ import math
 from pathlib import Path
 
 from explaining_markets.calibration import PercentileCalibrator
-from explaining_markets.features_v3 import FeatureVectorV3, MODEL_FEATURE_NAMES_V3
+from explaining_markets.disclosure_results_v3 import PARSER_VERSION
+from explaining_markets.features_v3 import FEATURE_SPEC_VERSION_V3, FeatureVectorV3, MODEL_FEATURE_NAMES_V3
 from explaining_markets.model_v3 import MultiSignalV3Model
 
 DEFAULT_V3_LITE_CANDIDATE_PATH = (
@@ -29,6 +28,8 @@ class V3LiteCandidateModel(MultiSignalV3Model):
         raw = json.loads(self.artifact_path.read_text(encoding="utf-8"))
         self.model_version = str(raw["model_version"])
         self.feature_spec_version = str(raw.get("feature_spec_version") or "")
+        self.v3_feature_spec_version = str(raw.get("v3_feature_spec_version") or "")
+        self.disclosure_parser_version = str(raw.get("disclosure_parser_version") or "")
         self.feature_names = tuple(str(x) for x in raw["feature_names"])
         self.means = tuple(float(x) for x in raw["means"])
         self.standard_deviations = tuple(float(x) for x in raw["standard_deviations"])
@@ -52,8 +53,12 @@ class V3LiteCandidateModel(MultiSignalV3Model):
             raise ValueError("operator V3-lite candidate must not claim promoted=true")
         if not self.operator_override or not self.production_candidate:
             raise ValueError("V3-lite candidate lacks explicit operator-override metadata")
-        if self.feature_spec_version != "v3_lite_v1":
+        if self.feature_spec_version != "v3_lite_v2_disclosure_results":
             raise ValueError("unsupported V3-lite candidate feature spec")
+        if self.v3_feature_spec_version != FEATURE_SPEC_VERSION_V3:
+            raise ValueError("V3-lite artifact does not match the live V3 feature spec")
+        if self.disclosure_parser_version != PARSER_VERSION:
+            raise ValueError("V3-lite artifact does not match the live disclosure parser")
         if not self.feature_names:
             raise ValueError("V3-lite candidate has no features")
         if any(name not in MODEL_FEATURE_NAMES_V3 for name in self.feature_names):
@@ -70,7 +75,7 @@ class V3LiteCandidateModel(MultiSignalV3Model):
         if any(sd <= 0.0 for sd in self.standard_deviations):
             raise ValueError("V3-lite candidate standard deviations must be positive")
         if not (0.0 <= self.clip_lower < self.clip_upper <= 1.0):
-            raise ValueError("V3-lite candidate clip bounds are invalid")
+            raise ValueError("V3-lite artifact clip bounds are invalid")
         source = self.calibrator.source.lower()
         if "validation" not in source or "2025q4" not in source:
             raise ValueError("V3-lite calibration provenance is not clearly out-of-sample")
@@ -100,6 +105,7 @@ class V3LiteCandidateModel(MultiSignalV3Model):
             "[V3_LITE_MODEL] "
             f"model={self.model_version} ablation={self.ablation} "
             f"raw={raw:.4f} submitted={calibrated:.4f} "
-            f"calibration={self.calibrator.version} operator_override=1"
+            f"calibration={self.calibrator.version} parser={self.disclosure_parser_version} "
+            "operator_override=1"
         )
         return calibrated
