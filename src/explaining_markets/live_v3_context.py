@@ -78,6 +78,20 @@ def build_live_v3_context(*, ticker: str, event: dict, cutoff, providers: V3Prov
     base = context_from_existing_cache(ticker, cutoff)
     disclosure = list(event.get("disclosure") or ())
 
+    # If the competition event has no information URL, do not make unrelated
+    # external API calls. We can still use local cache data plus any disclosure
+    # already present in the event payload, while preserving deterministic
+    # missingness for every unavailable provider family.
+    if not event.get("information_url"):
+        providers = V3ProviderBundle.null()
+        receipts.append({
+            "provider_call": "external_context",
+            "status": "skipped",
+            "count": 0,
+            "reason": "missing_information_url",
+            "retrieved_at": _utcnow().isoformat(),
+        })
+
     earnings = _safe(receipts, "earnings.current", lambda: providers.earnings.current(ticker, cutoff), None)
     if earnings is not None and not earnings.eligible(cutoff):
         earnings = None
