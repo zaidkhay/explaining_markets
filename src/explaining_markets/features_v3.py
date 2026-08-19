@@ -3,6 +3,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from explaining_markets.disclosure_results_v3 import (
+    merge_earnings_records,
+    merge_guidance_records,
+    parse_disclosure_records,
+)
 from explaining_markets.feature_families.company_history_v3 import COMPANY_HISTORY_V3_FEATURE_NAMES, company_history_features_v3
 from explaining_markets.feature_families.earnings_surprise import EARNINGS_SURPRISE_FEATURE_NAMES, earnings_surprise_features
 from explaining_markets.feature_families.guidance_expectations import GUIDANCE_FEATURE_NAMES, guidance_expectation_features
@@ -15,7 +20,7 @@ from explaining_markets.feature_families.revenue_results import REVENUE_SURPRISE
 from explaining_markets.forward_looking_features import MODEL_FEATURE_NAMES, ForwardLookingFeatures, extract_forward_looking_features
 from explaining_markets.v3_records import V3Context
 
-FEATURE_SPEC_VERSION_V3 = "v3.1-live-news-reasoning"
+FEATURE_SPEC_VERSION_V3 = "v3.2-disclosure-results"
 
 GUIDANCE_INTERACTION_FEATURE_NAMES = (
     "eps_beat_but_guidance_cut", "eps_miss_but_guidance_raised",
@@ -68,10 +73,26 @@ def _guidance_interactions(eps, rev, guide, fls_values):
 
 
 def build_feature_vector_v3(*, disclosure: list[str], context: V3Context) -> FeatureVectorV3:
+    """Build V3 features using vendor records plus focal-disclosure fallbacks.
+
+    Complete provider actual/consensus pairs win.  When they are absent, the
+    competition disclosure may supply the same information directly (for
+    example "EPS beat consensus by 12%").  This same function is used by the
+    historical enrichment pipeline and live inference, keeping feature
+    semantics aligned.
+    """
     fls = extract_forward_looking_features(disclosure)
-    eps = earnings_surprise_features(context.earnings, context.company_history, context.cutoff)
-    rev = revenue_surprise_features(context.earnings, context.company_history, context.cutoff)
-    guide = guidance_expectation_features(context.guidance, context.cutoff)
+    parsed = parse_disclosure_records(disclosure, ticker=context.ticker, cutoff=context.cutoff)
+    current_earnings = merge_earnings_records(
+        context.earnings, parsed.earnings, cutoff=context.cutoff
+    )
+    current_guidance = merge_guidance_records(
+        context.guidance, parsed.guidance, cutoff=context.cutoff
+    )
+
+    eps = earnings_surprise_features(current_earnings, context.company_history, context.cutoff)
+    rev = revenue_surprise_features(current_earnings, context.company_history, context.cutoff)
+    guide = guidance_expectation_features(current_guidance, context.cutoff)
     price = price_context_features(context.stock_prices, context.cutoff)
     market = market_sector_features(context.stock_prices, context.market_prices, context.sector_prices, context.cutoff)
     peers = peer_sympathy_features(context.peers, context.peer_prices, context.peer_earnings, market["market_return_1d"], context.cutoff)
