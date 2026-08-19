@@ -125,77 +125,69 @@ def check_v3_feed(ticker: str):
 def check_production():
     """Non-submitting deployed V3-lite production diagnostic.
 
-    This intentionally FAILS when the candidate artifact is missing or Modal
-    selects V1, preventing a silent rollback from being mistaken for a V3
-    deployment.
+    This intentionally FAILS when the operator candidate is absent, the wrong
+    model is selected, or the exact realized-disclosure parser -> model ->
+    calibration path fails the same live-realism gate used by the local
+    builder/verifier.  The diagnostic does not require a reasoning ablation;
+    direct realized-result features are valid production signals.
     """
     import os
 
     os.environ.setdefault("V3_HISTORY_CACHE_PATH", "/v3-data/company_history.sqlite")
     os.environ.setdefault("V3_EVIDENCE_DIR", "/v3-data/evidence")
 
-    from explaining_markets.feature_families.reasoning import REASONING_FEATURE_NAMES
-    from explaining_markets.features_v3 import FeatureVectorV3, MODEL_FEATURE_NAMES_V3
-    from explaining_markets.forward_looking_features import extract_forward_looking_features
     from explaining_markets.model import get_default_model
     from explaining_markets.model_v3_lite import V3LiteCandidateModel
+    from explaining_markets.v3_lite_live_gate import evaluate_v3_lite_live_gate
 
+    expected_model = os.getenv("EXPECTED_V3_LITE_MODEL", "v3_lite_operator_2026_08_19")
     model = get_default_model()
     if not isinstance(model, V3LiteCandidateModel):
         result = {
             "status": "FAIL",
             "model": getattr(model, "model_version", type(model).__name__),
-            "expected": "v3_lite_operator_2026_08_18",
+            "expected": expected_model,
             "detail": "V3-lite operator candidate was not selected",
         }
         print("[PROD_MODAL_DIAGNOSTIC] " + " ".join(f"{k}={v}" for k, v in result.items()))
         return result
 
-    def vector(direction: int):
-        values = {name: 0.0 for name in MODEL_FEATURE_NAMES_V3}
-        for name, mean, sd, coef in zip(
-            model.feature_names,
-            model.means,
-            model.standard_deviations,
-            model.coefficients,
-            strict=True,
-        ):
-            if name not in REASONING_FEATURE_NAMES:
-                continue
-            if abs(coef) <= 1e-12:
-                values[name] = mean
-                continue
-            sign = 1.0 if coef > 0 else -1.0
-            values[name] = mean + direction * sign * sd
-        return FeatureVectorV3(values=values, fls=extract_forward_looking_features([]))
-
-    negative_raw = model.predict_raw_vector(vector(-1))
-    neutral_raw = model.predict_raw_vector(vector(0))
-    positive_raw = model.predict_raw_vector(vector(1))
-    negative = model.calibrator.calibrate(negative_raw)
-    neutral = model.calibrator.calibrate(neutral_raw)
-    positive = model.calibrator.calibrate(positive_raw)
-    reasoning_nonzero = sum(
-        1
-        for name, coef in zip(model.feature_names, model.coefficients, strict=True)
-        if name in REASONING_FEATURE_NAMES and abs(coef) > 1e-12
+    gate = evaluate_v3_lite_live_gate(
+        model,
+        min_submitted_spread=0.05,
+        min_adjacent_rank_steps=5,
     )
-    ordered = negative_raw < neutral_raw < positive_raw and negative <= neutral <= positive
-    spread = positive - negative
-    status = "PASS" if reasoning_nonzero > 0 and ordered and spread > 0.05 else "FAIL"
+    scenario_by_label = {scenario.label: scenario for scenario in gate.scenarios}
+    model_matches = model.model_version == expected_model
+    metadata_ok = (
+        model.operator_override
+        and model.production_candidate
+        and not model.promoted
+    )
+    status = "PASS" if model_matches and metadata_ok and gate.passed else "FAIL"
     result = {
         "status": status,
         "model": model.model_version,
+        "expected": expected_model,
         "ablation": model.ablation,
         "operator_override": model.operator_override,
+        "production_candidate": model.production_candidate,
         "promoted": model.promoted,
         "calibration": model.calibrator.version,
-        "reasoning_nonzero": reasoning_nonzero,
-        "negative": negative,
-        "neutral": neutral,
-        "positive": positive,
-        "spread": spread,
-        "ordered": ordered,
+        "calibration_n_fitted": model.calibrator.n_fitted,
+        "parser": model.disclosure_parser_version,
+        "negative": scenario_by_label["negative"].submitted,
+        "neutral": scenario_by_label["neutral"].submitted,
+        "positive": scenario_by_label["positive"].submitted,
+        "negative_neutral_gap": gate.negative_neutral_gap,
+        "neutral_positive_gap": gate.neutral_positive_gap,
+        "required_adjacent_gap": gate.minimum_adjacent_gap_required,
+        "required_adjacent_ranks": gate.adjacent_rank_steps_required,
+        "spread": gate.submitted_spread,
+        "ordered": gate.ordered,
+        "parsed_ok": gate.parsed_ok,
+        "zero_fls": gate.zero_fls,
+        "live_gate_passed": gate.passed,
         "openrouter_live_enabled": os.getenv("V3_LIVE_USE_OPENROUTER", "0"),
         "em_api_configured": bool(os.getenv("EM_API_KEY")),
         "webhook_secret_configured": bool(os.getenv("EM_WEBHOOK_SECRET")),
