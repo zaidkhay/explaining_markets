@@ -44,7 +44,7 @@ def serialize_operator_candidate(
     operator_reason: str,
 ) -> Path:
     """Write an unpromoted, explicitly operator-selected candidate artifact."""
-    if kind not in {"ridge", "elastic_net"}:
+    if kind not in {"ridge", "elastic_net", "constrained_ridge"}:
         raise RuntimeError("operator V3-lite runtime supports linear candidates only")
     if not operator_reason.strip():
         raise ValueError("operator_reason is required")
@@ -57,22 +57,41 @@ def serialize_operator_candidate(
         raise RuntimeError("no V3-lite development rows are available")
 
     names = tuple(str(name) for name in feature_names)
-    X = np.asarray([row.x(names) for row in dev_rows], dtype=float)
-    y = np.asarray([row.target_percentile for row in dev_rows], dtype=float)
-    means, stds = _standardize(X)
-    Z = (X - means) / stds
+    sign_constraints: dict[str, int] = {}
+    if kind == "constrained_ridge":
+        # Research-only SciPy fitting happens here while the artifact is built.
+        # The live runtime consumes only the resulting numeric parameters.
+        from explaining_markets.constrained_linear import fit_sign_constrained_parameters
 
-    if kind == "ridge":
-        model = Ridge(alpha=float(params["alpha"])).fit(Z, y)
-    else:
-        model = ElasticNet(
+        fitted = fit_sign_constrained_parameters(
+            dev_rows,
+            names,
             alpha=float(params["alpha"]),
-            l1_ratio=float(params["l1_ratio"]),
-            max_iter=20000,
-        ).fit(Z, y)
+        )
+        means = np.asarray(fitted["means"], dtype=float)
+        stds = np.asarray(fitted["standard_deviations"], dtype=float)
+        coefficients = np.asarray(fitted["coefficients"], dtype=float)
+        intercept = float(fitted["intercept"])
+        sign_constraints = dict(fitted.get("sign_constraints") or {})
+    else:
+        X = np.asarray([row.x(names) for row in dev_rows], dtype=float)
+        y = np.asarray([row.target_percentile for row in dev_rows], dtype=float)
+        means, stds = _standardize(X)
+        Z = (X - means) / stds
+
+        if kind == "ridge":
+            model = Ridge(alpha=float(params["alpha"])).fit(Z, y)
+        else:
+            model = ElasticNet(
+                alpha=float(params["alpha"]),
+                l1_ratio=float(params["l1_ratio"]),
+                max_iter=20000,
+            ).fit(Z, y)
+        coefficients = np.asarray(model.coef_, dtype=float)
+        intercept = float(model.intercept_)
 
     artifact = {
-        "model_version": "v3_lite_operator_2026_08_18",
+        "model_version": "v3_lite_operator_2026_08_19",
         "feature_spec_version": "v3_lite_v2_disclosure_results",
         "v3_feature_spec_version": FEATURE_SPEC_VERSION_V3,
         "disclosure_parser_version": PARSER_VERSION,
@@ -80,8 +99,8 @@ def serialize_operator_candidate(
         "feature_names": list(names),
         "means": [float(x) for x in means],
         "standard_deviations": [float(x) for x in stds],
-        "coefficients": [float(x) for x in model.coef_],
-        "intercept": float(model.intercept_),
+        "coefficients": [float(x) for x in coefficients],
+        "intercept": float(intercept),
         "clip_bounds": list(CLIP_BOUNDS),
         "calibration": calibrator.as_dict(),
         "promoted": False,
@@ -104,6 +123,7 @@ def serialize_operator_candidate(
             "honest_holdout_in_fit": False,
             "disclosure_parser_version": PARSER_VERSION,
             "v3_feature_spec_version": FEATURE_SPEC_VERSION_V3,
+            "sign_constraints": sign_constraints,
         },
     }
 
