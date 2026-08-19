@@ -164,7 +164,18 @@ def main() -> int:
     parser.add_argument("--ablation", choices=tuple(LIVE_CANDIDATE_FEATURE_SETS), default=None)
     parser.add_argument("--min-disclosure-result-coverage", type=float, default=0.10)
     parser.add_argument("--min-live-spread", type=float, default=0.05)
-    parser.add_argument("--min-live-adjacent-gap", type=float, default=0.02)
+    parser.add_argument(
+        "--min-live-adjacent-gap",
+        type=float,
+        default=None,
+        help="Optional explicit percentile gap override. Default derives gap from calibration rank resolution.",
+    )
+    parser.add_argument(
+        "--min-live-adjacent-ranks",
+        type=int,
+        default=5,
+        help="Minimum historical OOS calibration ranks between adjacent scenarios.",
+    )
     args = parser.parse_args()
 
     rows_path = args.rows or _default_rows()
@@ -204,8 +215,6 @@ def main() -> int:
         if not active:
             continue
 
-        # Existing unconstrained candidates remain in the search, but every
-        # candidate still has to pass the stricter live gate.
         for kind, params in candidate_specs(include_nonlinear=False):
             fit = fit_predict(train, validation, active, kind, params)
             _append_candidate_if_better_than_v1(
@@ -217,9 +226,6 @@ def main() -> int:
                 v1_spear=float(v1_spear),
             )
 
-        # Add sign-constrained ridge candidates. These preserve the historical
-        # fitting objective while forbidding semantically inverted coefficients
-        # on EPS/revenue surprise and directional reasoning features.
         for alpha in RIDGE_ALPHAS:
             fit = fit_sign_constrained_ridge(
                 train,
@@ -263,6 +269,7 @@ def main() -> int:
                 runtime,
                 min_submitted_spread=args.min_live_spread,
                 min_adjacent_submitted_gap=args.min_live_adjacent_gap,
+                min_adjacent_rank_steps=args.min_live_adjacent_ranks,
             )
             candidate["live_gate"] = gate
             if gate.passed:
@@ -279,9 +286,13 @@ def main() -> int:
                 f"validation_spearman={candidate['metrics'].get('spearman')} "
                 f"ordered={gate.ordered} spread={gate.submitted_spread:.4f} "
                 f"neg_neu={gate.negative_neutral_gap:.4f} "
-                f"neu_pos={gate.neutral_positive_gap:.4f}"
+                f"neu_pos={gate.neutral_positive_gap:.4f} "
+                f"required_adjacent={gate.minimum_adjacent_gap_required:.4f}"
             )
-        print(f"NOTE: existing artifact at {args.output} was NOT overwritten; verify output may therefore describe a stale candidate.")
+        print(
+            f"NOTE: existing artifact at {args.output} was NOT overwritten; "
+            "verify output may therefore describe a stale candidate."
+        )
         raise SystemExit(
             "refusing operator V3-lite artifact: every validation-improving directional "
             "candidate failed the realized-disclosure live gate"
@@ -303,8 +314,9 @@ def main() -> int:
             "disclosures but produced all-zero FLS vectors and identical 0.4946 raw scores. "
             "Historical rows were refreshed with the point-in-time realized-disclosure parser. "
             "Candidate selection required improved chronological validation Spearman over V1, "
-            "a strict calibrated negative<neutral<positive live-realism gate, and sign constraints "
-            "for semantically unambiguous realized-result features when constrained_ridge wins."
+            "a strict calibrated negative<neutral<positive live-realism gate with rank-resolution "
+            "aware adjacent separation, and sign constraints for semantically unambiguous "
+            "realized-result features when constrained_ridge wins."
         ),
     )
 
@@ -319,7 +331,8 @@ def main() -> int:
     print(f"validation_spearman: {chosen['metrics'].get('spearman')}")
     print(f"validation_pearson: {chosen['metrics'].get('pearson')}")
     print(f"calibration: {chosen['calibrator'].version}")
-    print("selection_policy: validation improvement + strict realized-disclosure live gate")
+    print(f"calibration_n_fitted: {gate.calibration_n_fitted}")
+    print("selection_policy: validation improvement + rank-resolution live gate")
     print("live_gate:")
     for scenario in gate.scenarios:
         print(
@@ -332,6 +345,8 @@ def main() -> int:
     print(f"  ordered: {gate.ordered}")
     print(f"  negative_neutral_gap: {gate.negative_neutral_gap:.4f}")
     print(f"  neutral_positive_gap: {gate.neutral_positive_gap:.4f}")
+    print(f"  required_adjacent_gap: {gate.minimum_adjacent_gap_required:.4f}")
+    print(f"  required_adjacent_ranks: {gate.adjacent_rank_steps_required}")
     print(f"  submitted_spread: {gate.submitted_spread:.4f}")
     print("normal_promotion_gate: NOT PASSED (untouched holdout unavailable)")
     print("operator_override: ENABLED AND RECORDED")
