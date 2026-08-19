@@ -262,7 +262,7 @@ def main() -> int:
             gate = evaluate_v3_lite_live_gate(
                 runtime,
                 min_submitted_spread=args.min_live_spread,
-                min_adjacent_gap=args.min_live_adjacent_gap,
+                min_adjacent_submitted_gap=args.min_live_adjacent_gap,
             )
             candidate["live_gate"] = gate
             if gate.passed:
@@ -278,8 +278,8 @@ def main() -> int:
                 f"{candidate['ablation']} {candidate['kind']} {candidate['params']} "
                 f"validation_spearman={candidate['metrics'].get('spearman')} "
                 f"ordered={gate.ordered} spread={gate.submitted_spread:.4f} "
-                f"neg_neu={gate.negative_to_neutral_gap:.4f} "
-                f"neu_pos={gate.neutral_to_positive_gap:.4f}"
+                f"neg_neu={gate.negative_neutral_gap:.4f} "
+                f"neu_pos={gate.neutral_positive_gap:.4f}"
             )
         print(f"NOTE: existing artifact at {args.output} was NOT overwritten; verify output may therefore describe a stale candidate.")
         raise SystemExit(
@@ -330,8 +330,8 @@ def main() -> int:
     print(f"  parsed_ok: {gate.parsed_ok}")
     print(f"  zero_fls: {gate.zero_fls}")
     print(f"  ordered: {gate.ordered}")
-    print(f"  negative_to_neutral_gap: {gate.negative_to_neutral_gap:.4f}")
-    print(f"  neutral_to_positive_gap: {gate.neutral_to_positive_gap:.4f}")
+    print(f"  negative_neutral_gap: {gate.negative_neutral_gap:.4f}")
+    print(f"  neutral_positive_gap: {gate.neutral_positive_gap:.4f}")
     print(f"  submitted_spread: {gate.submitted_spread:.4f}")
     print("normal_promotion_gate: NOT PASSED (untouched holdout unavailable)")
     print("operator_override: ENABLED AND RECORDED")
