@@ -12,7 +12,7 @@ def main() -> int:
     gate = evaluate_v3_lite_live_gate(
         model,
         min_submitted_spread=0.05,
-        min_adjacent_submitted_gap=0.02,
+        min_adjacent_rank_steps=5,
     )
 
     reasoning_features = [
@@ -29,6 +29,7 @@ def main() -> int:
     print(f"operator_override: {model.operator_override}")
     print(f"promoted: {model.promoted}")
     print(f"calibration: {model.calibrator.version}")
+    print(f"calibration_n_fitted: {gate.calibration_n_fitted}")
     print(f"parser: {model.disclosure_parser_version}")
     print()
     print("REALIZED DISCLOSURE TEST (FLS intentionally zero)")
@@ -45,6 +46,8 @@ def main() -> int:
     print(f"realized_ordered: {gate.ordered}")
     print(f"negative_to_neutral_gap: {gate.negative_neutral_gap:.4f}")
     print(f"neutral_to_positive_gap: {gate.neutral_positive_gap:.4f}")
+    print(f"required_adjacent_gap: {gate.minimum_adjacent_gap_required:.4f}")
+    print(f"required_adjacent_ranks: {gate.adjacent_rank_steps_required}")
     print(f"realized_submitted_spread: {gate.submitted_spread:.4f}")
     print()
     if reasoning_features:
