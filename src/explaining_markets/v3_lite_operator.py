@@ -1,9 +1,8 @@
 """Offline serialization for an explicitly operator-selected V3-lite candidate.
 
 The normal V3-lite promotion serializer remains untouched and still refuses to
-write without the untouched holdout.  This module exists for an emergency
-operator decision: it records the failed promotion state honestly and writes a
-separate candidate artifact that production may opt into explicitly.
+write without the untouched holdout. This module records the emergency
+operator decision honestly in a separate production-candidate artifact.
 """
 from __future__ import annotations
 
@@ -16,6 +15,8 @@ import numpy as np
 from sklearn.linear_model import ElasticNet, Ridge
 
 from explaining_markets.calibration import PercentileCalibrator
+from explaining_markets.disclosure_results_v3 import PARSER_VERSION
+from explaining_markets.features_v3 import FEATURE_SPEC_VERSION_V3
 from explaining_markets.v3_lite_training import CLIP_BOUNDS, _standardize
 from explaining_markets.v3_training import (
     LEGACY_HOLDOUT_QUARTER,
@@ -35,6 +36,7 @@ def serialize_operator_candidate(
     feature_names: Sequence[str],
     kind: str,
     params: dict,
+    ablation: str,
     calibrator: PercentileCalibrator,
     validation_metrics: dict,
     legacy_metrics: dict | None,
@@ -46,6 +48,8 @@ def serialize_operator_candidate(
         raise RuntimeError("operator V3-lite runtime supports linear candidates only")
     if not operator_reason.strip():
         raise ValueError("operator_reason is required")
+    if not ablation.strip():
+        raise ValueError("ablation is required")
 
     development_quarters = {TRAIN_QUARTER, VALIDATION_QUARTER, LEGACY_HOLDOUT_QUARTER}
     dev_rows = [row for row in rows if row.quarter in development_quarters]
@@ -69,8 +73,10 @@ def serialize_operator_candidate(
 
     artifact = {
         "model_version": "v3_lite_operator_2026_08_18",
-        "feature_spec_version": "v3_lite_v1",
-        "ablation": "fls_plus_reasoning",
+        "feature_spec_version": "v3_lite_v2_disclosure_results",
+        "v3_feature_spec_version": FEATURE_SPEC_VERSION_V3,
+        "disclosure_parser_version": PARSER_VERSION,
+        "ablation": ablation,
         "feature_names": list(names),
         "means": [float(x) for x in means],
         "standard_deviations": [float(x) for x in stds],
@@ -89,12 +95,15 @@ def serialize_operator_candidate(
             "normal_promotion_gate_passed": False,
             "normal_promotion_blocker": "untouched 2026Q3 holdout unavailable",
             "operator_reason": operator_reason,
+            "selected_ablation": ablation,
             "selected_kind": kind,
             "selected_params": dict(params),
             "validation_metrics": validation_metrics,
             "legacy_metrics": legacy_metrics,
             "calibration_source": calibrator.source,
             "honest_holdout_in_fit": False,
+            "disclosure_parser_version": PARSER_VERSION,
+            "v3_feature_spec_version": FEATURE_SPEC_VERSION_V3,
         },
     }
 
