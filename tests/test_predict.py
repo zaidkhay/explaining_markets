@@ -112,6 +112,7 @@ def test_predict_handles_no_focal_assets() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
+        {"items": [{"kind": "facts", "content": ["Revenue beat."]}]},
         {"disclosure": {"items": [{"kind": "facts", "content": ["Revenue beat."]}]}},
         {"facts": ["Revenue beat."]},
         {"summary": "Revenue beat."},
@@ -121,3 +122,13 @@ def test_predict_accepts_every_documented_information_url_shape(monkeypatch, pay
     monkeypatch.setattr(predict_module.httpx, "get", lambda *a, **k: _FakeResponse(payload))
     preds = predict_module.predict(SAMPLE_EVENT)
     _assert_well_formed(preds, ["AAPL", "MSFT"])
+
+
+def test_fetch_disclosure_does_not_treat_metadata_as_facts(monkeypatch) -> None:
+    payload = {
+        "schema_version": "1.0",
+        "event_id": "ea_TEST_Q1_2026",
+        "generated_at": "2026-08-19T17:00:18Z",
+    }
+    monkeypatch.setattr(predict_module.httpx, "get", lambda *a, **k: _FakeResponse(payload))
+    assert predict_module._fetch_disclosure("https://example.test/disclosure") == []
