@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Build the explicitly operator-selected V3-lite candidate for live use.
 
-This never changes the normal promotion gate.  It requires refreshed historical
+This never changes the normal promotion gate. It requires refreshed historical
 rows with meaningful realized-disclosure coverage and records the operator
 override in the artifact.
+
+Automatic production selection is intentionally narrower than the research
+ablation sweep: it only considers families that (a) can express positive vs
+negative realized results and (b) do not require a live external-data family to
+be present. The final verifier still has veto power over any selected artifact.
 """
 from __future__ import annotations
 
@@ -25,6 +30,31 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENRICHED_ROWS = ROOT / "data" / "processed" / "v3_training_rows_enriched.jsonl.gz"
 DEFAULT_BASE_ROWS = ROOT / "data" / "processed" / "v3_training_rows.jsonl.gz"
 
+# These are deliberately self-contained for tomorrow's live path. EPS features
+# are derived directly from the focal disclosure. Reasoning features are built
+# deterministically from that same disclosure-derived V3 vector, so neither
+# candidate requires prices/news/vendor data to create directional dispersion.
+AUTO_CANDIDATE_ABLATIONS = (
+    "fls_plus_eps",
+    "fls_plus_reasoning",
+)
+
+DIRECTIONAL_DISCLOSURE_FEATURES = frozenset({
+    "eps_surprise_percent",
+    "eps_surprise_signed",
+    "is_eps_beat",
+    "is_eps_miss",
+    "is_large_eps_beat",
+    "is_large_eps_miss",
+    "revenue_surprise_percent",
+    "is_revenue_beat",
+    "is_revenue_miss",
+    "reasoning_earnings_quality",
+    "reasoning_revenue_quality",
+    "reasoning_expectations_gap",
+    "reasoning_overall_event_signal",
+})
+
 
 def _default_rows() -> Path:
     return DEFAULT_ENRICHED_ROWS if DEFAULT_ENRICHED_ROWS.exists() else DEFAULT_BASE_ROWS
@@ -36,14 +66,9 @@ def _score(payload: dict) -> tuple[float, float]:
     return (-1e9 if spear is None else float(spear), -float(metrics["mae"]))
 
 
-def _disclosure_capable_ablation(name: str) -> bool:
-    names = ABLATIONS[name]
-    return (
-        "has_eps_surprise" in names
-        or "has_revenue_surprise" in names
-        or "reasoning_earnings_quality" in names
-        or "reasoning_revenue_quality" in names
-    )
+def _directional_disclosure_ablation(name: str) -> bool:
+    """True only when the ablation can distinguish a beat from a miss."""
+    return bool(DIRECTIONAL_DISCLOSURE_FEATURES.intersection(ABLATIONS[name]))
 
 
 def main() -> int:
@@ -73,13 +98,20 @@ def main() -> int:
     results, _, _ = evaluate_v3_lite(rows, include_nonlinear=False)
     if args.ablation:
         ablation = args.ablation
+        if not _directional_disclosure_ablation(ablation):
+            raise SystemExit(
+                "refusing operator V3-lite artifact: requested ablation cannot distinguish "
+                f"positive from negative realized disclosure results ({ablation})"
+            )
     else:
         eligible = [
-            name for name, payload in results["ablations"].items()
-            if "selected" in payload and _disclosure_capable_ablation(name)
+            name for name in AUTO_CANDIDATE_ABLATIONS
+            if name in results["ablations"]
+            and "selected" in results["ablations"][name]
+            and _directional_disclosure_ablation(name)
         ]
         if not eligible:
-            raise SystemExit("no disclosure-capable V3-lite ablation is available")
+            raise SystemExit("no live-safe directional V3-lite ablation is available")
         ablation = max(eligible, key=lambda name: _score(results["ablations"][name]))
 
     selected = results["ablations"][ablation]["selected"]
@@ -88,7 +120,7 @@ def main() -> int:
     v1_spear = v1.get("spearman")
     if selected_spear is None or v1_spear is None or float(selected_spear) <= float(v1_spear):
         raise SystemExit(
-            "refusing operator V3-lite artifact: selected disclosure-capable model does not "
+            "refusing operator V3-lite artifact: selected directional model does not "
             f"beat V1 validation Spearman (selected={selected_spear}, v1={v1_spear})"
         )
 
@@ -127,7 +159,8 @@ def main() -> int:
             "User-authorized 2026-08-18 production switch after live V1 received non-empty "
             "disclosures but produced all-zero FLS vectors and identical 0.4946 raw scores. "
             "Candidate was rebuilt after realized disclosure facts were mapped into the same "
-            "point-in-time V3 feature families used for historical enrichment."
+            "point-in-time V3 feature families used for historical enrichment. Automatic "
+            "selection was restricted to live-safe directional disclosure ablations."
         ),
     )
 
@@ -142,6 +175,7 @@ def main() -> int:
     print(f"validation_spearman: {selected_spear}")
     print(f"validation_pearson: {selected['metrics'].get('pearson')}")
     print(f"calibration: {calibrator.version}")
+    print("selection_policy: live-safe directional disclosure only")
     print("normal_promotion_gate: NOT PASSED (untouched holdout unavailable)")
     print("operator_override: ENABLED AND RECORDED")
     print(f"artifact: {path}")
