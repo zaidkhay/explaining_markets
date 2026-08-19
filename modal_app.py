@@ -77,13 +77,10 @@ def predict_and_submit(event: dict, webhook_id: str | None = None):
 def check_v3_feed(ticker: str):
     """Non-public Modal diagnostic. Never prints credential values.
 
-    The diagnostic intentionally forces deterministic article/event reasoning.
-    OpenRouter configuration is reported separately, but no LLM calls are made
-    here so a free-model rate limit or long inference cannot consume the whole
-    120-second diagnostic budget.
+    Live providers are production-bounded. OpenRouter is disabled by default
+    in the provider bundle unless V3_LIVE_USE_OPENROUTER=1 is explicitly set.
     """
     import os
-    from dataclasses import replace
     from datetime import datetime, timezone
     from pathlib import Path
 
@@ -93,17 +90,10 @@ def check_v3_feed(ticker: str):
     from explaining_markets.live_v3_context import build_live_v3_context, feed_diagnostics
     from explaining_markets.point_in_time_audit_v3 import audit_context
     from explaining_markets.providers.live_context import default_provider_bundle_from_env
-    from explaining_markets.reasoning.event_reasoner import EventReasoner
-    from explaining_markets.reasoning.news_reasoner import NewsReasoner
 
     ticker = ticker.upper()
     cutoff = datetime.now(timezone.utc)
-    providers = default_provider_bundle_from_env()
-    providers = replace(
-        providers,
-        article_reasoner=NewsReasoner(use_openrouter=False),
-        event_reasoner=EventReasoner(use_openrouter=False),
-    )
+    providers = default_provider_bundle_from_env(production_safe=True)
     event = {"event_id": f"modal-diagnostic-{ticker}", "disclosure": []}
     context = build_live_v3_context(ticker=ticker, event=event, cutoff=cutoff, providers=providers)
     audit = audit_context(context)
@@ -116,7 +106,7 @@ def check_v3_feed(ticker: str):
         "twelve_data_configured": bool(os.getenv("TWELVE_DATA_API_KEY")),
         "tiingo_configured": bool(os.getenv("TINGO_API") or os.getenv("TIINGO_API_KEY")),
         "openrouter_configured": bool(os.getenv("OPEN_ROUTER_API_KEY")),
-        "reasoning_mode": "deterministic_diagnostic",
+        "openrouter_live_enabled": os.getenv("V3_LIVE_USE_OPENROUTER", "0"),
         "historical_cache_mounted": Path(os.environ["V3_HISTORY_CACHE_PATH"]).exists(),
         "company_news_count": diag["company_news_count"],
         "peer_news_count": diag["peer_news_count"],
@@ -133,31 +123,85 @@ def check_v3_feed(ticker: str):
 
 @app.function(image=image, secrets=secrets, volumes={"/v3-data": v3_data}, timeout=120)
 def check_production():
-    """Non-submitting deployed production diagnostic."""
+    """Non-submitting deployed V3-lite production diagnostic.
+
+    This intentionally FAILS when the candidate artifact is missing or Modal
+    selects V1, preventing a silent rollback from being mistaken for a V3
+    deployment.
+    """
     import os
 
     os.environ.setdefault("V3_HISTORY_CACHE_PATH", "/v3-data/company_history.sqlite")
     os.environ.setdefault("V3_EVIDENCE_DIR", "/v3-data/evidence")
 
-    from explaining_markets.production_runtime import production_scenario_report
+    from explaining_markets.feature_families.reasoning import REASONING_FEATURE_NAMES
+    from explaining_markets.features_v3 import FeatureVectorV3, MODEL_FEATURE_NAMES_V3
+    from explaining_markets.forward_looking_features import extract_forward_looking_features
+    from explaining_markets.model import get_default_model
+    from explaining_markets.model_v3_lite import V3LiteCandidateModel
 
-    report = production_scenario_report()
-    report["openrouter_optional_configured"] = bool(os.getenv("OPEN_ROUTER_API_KEY"))
-    report["em_api_configured"] = bool(os.getenv("EM_API_KEY"))
-    report["webhook_secret_configured"] = bool(os.getenv("EM_WEBHOOK_SECRET"))
-    status = "PASS" if (
-        report["calibration_loaded"]
-        and report["ordered"]
-        and report["meaningfully_differentiated"]
-    ) else "FAIL"
-    report["status"] = status
-    print(
-        "[PROD_MODAL_DIAGNOSTIC] "
-        f"status={status} model={report['model_version']} "
-        f"calibration={report['calibration_version']} spread={report['spread']:.4f} "
-        f"ordered={report['ordered']} openrouter_optional={report['openrouter_optional_configured']}"
+    model = get_default_model()
+    if not isinstance(model, V3LiteCandidateModel):
+        result = {
+            "status": "FAIL",
+            "model": getattr(model, "model_version", type(model).__name__),
+            "expected": "v3_lite_operator_2026_08_18",
+            "detail": "V3-lite operator candidate was not selected",
+        }
+        print("[PROD_MODAL_DIAGNOSTIC] " + " ".join(f"{k}={v}" for k, v in result.items()))
+        return result
+
+    def vector(direction: int):
+        values = {name: 0.0 for name in MODEL_FEATURE_NAMES_V3}
+        for name, mean, sd, coef in zip(
+            model.feature_names,
+            model.means,
+            model.standard_deviations,
+            model.coefficients,
+            strict=True,
+        ):
+            if name not in REASONING_FEATURE_NAMES:
+                continue
+            if abs(coef) <= 1e-12:
+                values[name] = mean
+                continue
+            sign = 1.0 if coef > 0 else -1.0
+            values[name] = mean + direction * sign * sd
+        return FeatureVectorV3(values=values, fls=extract_forward_looking_features([]))
+
+    negative_raw = model.predict_raw_vector(vector(-1))
+    neutral_raw = model.predict_raw_vector(vector(0))
+    positive_raw = model.predict_raw_vector(vector(1))
+    negative = model.calibrator.calibrate(negative_raw)
+    neutral = model.calibrator.calibrate(neutral_raw)
+    positive = model.calibrator.calibrate(positive_raw)
+    reasoning_nonzero = sum(
+        1
+        for name, coef in zip(model.feature_names, model.coefficients, strict=True)
+        if name in REASONING_FEATURE_NAMES and abs(coef) > 1e-12
     )
-    return report
+    ordered = negative_raw < neutral_raw < positive_raw and negative <= neutral <= positive
+    spread = positive - negative
+    status = "PASS" if reasoning_nonzero > 0 and ordered and spread > 0.05 else "FAIL"
+    result = {
+        "status": status,
+        "model": model.model_version,
+        "ablation": model.ablation,
+        "operator_override": model.operator_override,
+        "promoted": model.promoted,
+        "calibration": model.calibrator.version,
+        "reasoning_nonzero": reasoning_nonzero,
+        "negative": negative,
+        "neutral": neutral,
+        "positive": positive,
+        "spread": spread,
+        "ordered": ordered,
+        "openrouter_live_enabled": os.getenv("V3_LIVE_USE_OPENROUTER", "0"),
+        "em_api_configured": bool(os.getenv("EM_API_KEY")),
+        "webhook_secret_configured": bool(os.getenv("EM_WEBHOOK_SECRET")),
+    }
+    print("[PROD_MODAL_DIAGNOSTIC] " + " ".join(f"{key}={value}" for key, value in result.items()))
+    return result
 
 
 @app.function(image=image, secrets=secrets)
