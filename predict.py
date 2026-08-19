@@ -126,11 +126,16 @@ def _predict_one(
             from explaining_markets.live_v3_context import build_live_v3_context, feed_diagnostics
             from explaining_markets.point_in_time_audit_v3 import audit_context
             from explaining_markets.providers.live_context import default_provider_bundle_from_env
+            from explaining_markets.v3_providers import V3ProviderBundle
 
             actual_cutoff = cutoff or datetime.now(timezone.utc)
             live_event = dict(event or {})
             live_event["disclosure"] = list(disclosure)
-            providers = default_provider_bundle_from_env()
+            providers = (
+                default_provider_bundle_from_env()
+                if live_event.get("information_url")
+                else V3ProviderBundle.null()
+            )
             context = build_live_v3_context(ticker=ticker, event=live_event, cutoff=actual_cutoff, providers=providers)
             audit = audit_context(context)
             vector = build_feature_vector_v3(disclosure=disclosure, context=context)
@@ -289,27 +294,46 @@ def _fetch_disclosure(information_url: str | None) -> list[str]:
     if not isinstance(payload, dict):
         return [str(payload)]
 
+    def facts_from_items(items) -> list[str]:
+        if not isinstance(items, list):
+            return []
+        for item in items:
+            if not isinstance(item, dict) or item.get("kind") != "facts":
+                continue
+            content = item.get("content")
+            if isinstance(content, list):
+                return [str(x) for x in content if str(x).strip()]
+            if isinstance(content, str) and content.strip():
+                return [content]
+        return []
+
+    # Current competition payload shape: top-level items[].
+    facts = facts_from_items(payload.get("items"))
+    if facts:
+        return facts
+
+    # Backward-compatible documented shape: disclosure.items[].
     disclosure = payload.get("disclosure") or {}
     if isinstance(disclosure, dict):
-        for item in disclosure.get("items") or []:
-            if isinstance(item, dict) and item.get("kind") == "facts":
-                content = item.get("content") or []
-                return [str(x) for x in content]
+        facts = facts_from_items(disclosure.get("items"))
+        if facts:
+            return facts
 
     facts = payload.get("facts")
     if isinstance(facts, list):
-        return [str(x) for x in facts]
-    if isinstance(facts, str):
+        return [str(x) for x in facts if str(x).strip()]
+    if isinstance(facts, str) and facts.strip():
         return [facts]
 
     summary = payload.get("summary")
-    if isinstance(summary, str):
+    if isinstance(summary, str) and summary.strip():
         return [summary]
     if isinstance(summary, list):
-        return [str(x) for x in summary]
+        return [str(x) for x in summary if str(x).strip()]
 
-    forbidden = {"car1", "earnings_surprise", "event_returns", "baseline_predictions"}
-    return [str(v) for k, v in payload.items() if k not in forbidden and isinstance(v, str)]
+    # Fail closed. Metadata such as schema_version/event_id/generated_at is not
+    # disclosure evidence and must never be converted into model input.
+    return []
 
 
 def _bounded(value: float) -> float:
