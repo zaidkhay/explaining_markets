@@ -6,6 +6,11 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from explaining_markets.cached_v3_context import context_from_existing_cache
+from explaining_markets.disclosure_results_v3 import (
+    merge_earnings_records,
+    merge_guidance_records,
+    parse_disclosure_records,
+)
 from explaining_markets.features_v3 import build_feature_vector_v3
 from explaining_markets.news_ranking import rank_news
 from explaining_markets.point_in_time_audit_v3 import audit_context
@@ -71,6 +76,7 @@ def build_live_v3_context(*, ticker: str, event: dict, cutoff, providers: V3Prov
     """Assemble live context while failing individual provider families closed."""
     receipts: list[dict] = []
     base = context_from_existing_cache(ticker, cutoff)
+    disclosure = list(event.get("disclosure") or ())
 
     earnings = _safe(receipts, "earnings.current", lambda: providers.earnings.current(ticker, cutoff), None)
     if earnings is not None and not earnings.eligible(cutoff):
@@ -78,6 +84,19 @@ def build_live_v3_context(*, ticker: str, event: dict, cutoff, providers: V3Prov
     guidance = _safe(receipts, "guidance.current", lambda: providers.guidance.current(ticker, cutoff), None)
     if guidance is not None and not guidance.eligible(cutoff):
         guidance = None
+
+    parsed = parse_disclosure_records(disclosure, ticker=ticker, cutoff=cutoff)
+    earnings = merge_earnings_records(earnings, parsed.earnings, cutoff=cutoff)
+    guidance = merge_guidance_records(guidance, parsed.guidance, cutoff=cutoff)
+    receipts.append({
+        "provider_call": "event_disclosure.results",
+        "status": "ok",
+        "count": len(parsed.matched_fields),
+        "matched_fields": parsed.matched_fields,
+        "parser_version": parsed.parser_version,
+        "retrieved_at": _utcnow().isoformat(),
+    })
+
     metadata = _safe(receipts, "metadata", lambda: providers.metadata.metadata(ticker, cutoff), None)
     if metadata is not None and not metadata.eligible(cutoff):
         metadata = None
@@ -121,6 +140,8 @@ def build_live_v3_context(*, ticker: str, event: dict, cutoff, providers: V3Prov
     extras.update({
         "event_id": event.get("event_id") or event.get("id"),
         "provider_receipts": tuple(receipts + vendor_receipts),
+        "disclosure_result_fields": parsed.matched_fields,
+        "disclosure_result_parser": parsed.parser_version,
         "news_priority_scores": {
             "company": tuple(item.priority_score for item in company_ranked),
             "peer": tuple(item.priority_score for item in peer_ranked),
@@ -149,7 +170,7 @@ def build_live_v3_context(*, ticker: str, event: dict, cutoff, providers: V3Prov
         extras=extras,
     )
     audit_context(preliminary)
-    raw_vector = build_feature_vector_v3(disclosure=list(event.get("disclosure") or ()), context=preliminary)
+    raw_vector = build_feature_vector_v3(disclosure=disclosure, context=preliminary)
     event_reasoning = providers.event_reasoner.reason(
         values=raw_vector.values,
         cutoff=cutoff,
@@ -170,6 +191,8 @@ def feed_diagnostics(context: V3Context) -> dict[str, object]:
         "earnings_received": int(context.earnings is not None),
         "revenue_received": int(context.earnings is not None and context.earnings.reported_revenue is not None),
         "guidance_received": int(context.guidance is not None),
+        "disclosure_result_fields": context.extras.get("disclosure_result_fields", ()),
+        "disclosure_result_parser": context.extras.get("disclosure_result_parser"),
         "price_rows": len(context.stock_prices),
         "peer_count": len(context.peers),
         "company_news_count": len(context.company_news),
