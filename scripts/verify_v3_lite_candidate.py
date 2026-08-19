@@ -9,7 +9,11 @@ from explaining_markets.v3_lite_live_gate import evaluate_v3_lite_live_gate
 
 def main() -> int:
     model = V3LiteCandidateModel()
-    gate = evaluate_v3_lite_live_gate(model, min_submitted_spread=0.05)
+    gate = evaluate_v3_lite_live_gate(
+        model,
+        min_submitted_spread=0.05,
+        min_adjacent_submitted_gap=0.02,
+    )
 
     reasoning_features = [
         (name, coef)
@@ -39,6 +43,8 @@ def main() -> int:
     print(f"parsed_ok: {gate.parsed_ok}")
     print(f"zero_fls: {gate.zero_fls}")
     print(f"realized_ordered: {gate.ordered}")
+    print(f"negative_to_neutral_gap: {gate.negative_neutral_gap:.4f}")
+    print(f"neutral_to_positive_gap: {gate.neutral_positive_gap:.4f}")
     print(f"realized_submitted_spread: {gate.submitted_spread:.4f}")
     print()
     if reasoning_features:
