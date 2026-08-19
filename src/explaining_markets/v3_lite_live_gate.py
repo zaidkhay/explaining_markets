@@ -7,6 +7,12 @@ negative/neutral/positive disclosure facts must survive parsing and produce
 strictly ordered, meaningfully separated submitted percentiles even when the
 legacy FLS block is zero.
 
+Because the production calibration is an empirical percentile transform, a
+fixed adjacent-percentile floor is arbitrary and depends on validation sample
+size. By default we therefore require each adjacent scenario to be separated
+by at least ``min_adjacent_rank_steps`` historical OOS calibration ranks.
+An explicit percentile-gap override remains available for diagnostics.
+
 The scenarios are a safety constraint, not a training target or optimization
 objective. Candidates still have to beat V1 on chronological validation.
 """
@@ -59,6 +65,9 @@ class V3LiteLiveGateResult:
     submitted_spread: float
     negative_neutral_gap: float
     neutral_positive_gap: float
+    minimum_adjacent_gap_required: float
+    adjacent_rank_steps_required: int
+    calibration_n_fitted: int
     passed: bool
 
     def as_dict(self) -> dict[str, object]:
@@ -69,25 +78,49 @@ class V3LiteLiveGateResult:
             "submitted_spread": self.submitted_spread,
             "negative_neutral_gap": self.negative_neutral_gap,
             "neutral_positive_gap": self.neutral_positive_gap,
+            "minimum_adjacent_gap_required": self.minimum_adjacent_gap_required,
+            "adjacent_rank_steps_required": self.adjacent_rank_steps_required,
+            "calibration_n_fitted": self.calibration_n_fitted,
             "passed": self.passed,
             "scenarios": [scenario.__dict__ for scenario in self.scenarios],
         }
+
+
+def _adjacent_gap_floor(
+    model,
+    *,
+    explicit_gap: float | None,
+    min_adjacent_rank_steps: int,
+) -> tuple[float, int]:
+    if explicit_gap is not None:
+        if explicit_gap < 0:
+            raise ValueError("min_adjacent_submitted_gap must be non-negative")
+        n_fitted = int(getattr(getattr(model, "calibrator", None), "n_fitted", 0) or 0)
+        return float(explicit_gap), n_fitted
+
+    if min_adjacent_rank_steps < 1:
+        raise ValueError("min_adjacent_rank_steps must be >= 1")
+
+    calibrator = getattr(model, "calibrator", None)
+    n_fitted = int(getattr(calibrator, "n_fitted", 0) or 0)
+    if n_fitted > 0:
+        # A five-rank gap means multiple historical OOS predictions lie between
+        # adjacent live scenarios. This scales naturally with calibration size.
+        return float(min_adjacent_rank_steps / n_fitted), n_fitted
+
+    # Test/dummy calibrators may not expose fitted-sample provenance. Keep a
+    # small deterministic fallback rather than silently disabling separation.
+    return 0.005, 0
 
 
 def evaluate_v3_lite_live_gate(
     model,
     *,
     min_submitted_spread: float = 0.05,
-    min_adjacent_submitted_gap: float = 0.02,
+    min_adjacent_submitted_gap: float | None = None,
+    min_adjacent_rank_steps: int = 5,
 ) -> V3LiteLiveGateResult:
-    """Run the realized-disclosure invariant through the exact runtime model.
-
-    Overall spread alone is insufficient: a model that separates misses but
-    maps neutral and positive results to the same calibrated percentile is
-    still unsuitable for a ranking competition. Therefore both adjacent
-    submitted-score gaps must clear a small floor and ordering is strict after
-    calibration as well as before it.
-    """
+    """Run the realized-disclosure invariant through the exact runtime model."""
     cutoff = datetime.now(timezone.utc)
     reasoner = EventReasoner(use_openrouter=False)
     scenarios: list[LiveGateScenario] = []
@@ -128,9 +161,14 @@ def evaluate_v3_lite_live_gate(
     negative_neutral_gap = scenarios[1].submitted - scenarios[0].submitted
     neutral_positive_gap = scenarios[2].submitted - scenarios[1].submitted
     spread = scenarios[2].submitted - scenarios[0].submitted
+    adjacent_floor, n_fitted = _adjacent_gap_floor(
+        model,
+        explicit_gap=min_adjacent_submitted_gap,
+        min_adjacent_rank_steps=min_adjacent_rank_steps,
+    )
     adjacent_ok = (
-        negative_neutral_gap >= min_adjacent_submitted_gap
-        and neutral_positive_gap >= min_adjacent_submitted_gap
+        negative_neutral_gap >= adjacent_floor
+        and neutral_positive_gap >= adjacent_floor
     )
     passed = (
         parsed_ok
@@ -147,5 +185,8 @@ def evaluate_v3_lite_live_gate(
         submitted_spread=float(spread),
         negative_neutral_gap=float(negative_neutral_gap),
         neutral_positive_gap=float(neutral_positive_gap),
+        minimum_adjacent_gap_required=float(adjacent_floor),
+        adjacent_rank_steps_required=int(min_adjacent_rank_steps),
+        calibration_n_fitted=int(n_fitted),
         passed=passed,
     )
