@@ -1,11 +1,6 @@
-"""Modal deployment for the Explaining Markets starter.
-
-This is orchestration only: verify/ACK/dedupe/spawn, prediction, submission,
-and non-public feed/production diagnostics. Business logic stays under
-``src/explaining_markets``.
+"""Modal deployment for the Explaining Markets V3-lite production service.
 
 Deploy:      uv run modal deploy modal_app.py
-Dev/local:   uv run modal serve modal_app.py
 Feed check:  uv run modal run modal_app.py::check_v3_feed --ticker AAPL
 Prod check:  uv run modal run modal_app.py::check_production
 """
@@ -16,7 +11,7 @@ app = modal.App("explaining-markets-starter")
 
 image = (
     modal.Image.debian_slim()
-    .pip_install("fastapi[standard]", "httpx", "openai", "pydantic")
+    .pip_install("fastapi[standard]", "httpx", "pydantic")
     .add_local_python_source("explaining_markets", "predict", ignore=[])
 )
 
@@ -75,11 +70,7 @@ def predict_and_submit(event: dict, webhook_id: str | None = None):
 
 @app.function(image=image, secrets=secrets, volumes={"/v3-data": v3_data}, timeout=120)
 def check_v3_feed(ticker: str):
-    """Non-public Modal diagnostic. Never prints credential values.
-
-    Live providers are production-bounded. OpenRouter is disabled by default
-    in the provider bundle unless V3_LIVE_USE_OPENROUTER=1 is explicitly set.
-    """
+    """Non-public bounded provider/cutoff diagnostic."""
     import os
     from datetime import datetime, timezone
     from pathlib import Path
@@ -102,9 +93,6 @@ def check_v3_feed(ticker: str):
         "ticker": ticker,
         "cutoff": cutoff.isoformat(),
         "alpha_vantage_configured": bool(os.getenv("ALPHAVANTAGE_API_KEY")),
-        "finnhub_configured": bool(os.getenv("FINNHUB_API_KEY") or os.getenv("FINNHUBB_API")),
-        "twelve_data_configured": bool(os.getenv("TWELVE_DATA_API_KEY")),
-        "tiingo_configured": bool(os.getenv("TINGO_API") or os.getenv("TIINGO_API_KEY")),
         "openrouter_configured": bool(os.getenv("OPEN_ROUTER_API_KEY")),
         "openrouter_live_enabled": os.getenv("V3_LIVE_USE_OPENROUTER", "0"),
         "historical_cache_mounted": Path(os.environ["V3_HISTORY_CACHE_PATH"]).exists(),
@@ -123,14 +111,7 @@ def check_v3_feed(ticker: str):
 
 @app.function(image=image, secrets=secrets, volumes={"/v3-data": v3_data}, timeout=120)
 def check_production():
-    """Non-submitting deployed V3-lite production diagnostic.
-
-    This intentionally FAILS when the operator candidate is absent, the wrong
-    model is selected, or the exact realized-disclosure parser -> model ->
-    calibration path fails the same live-realism gate used by the local
-    builder/verifier.  The diagnostic does not require a reasoning ablation;
-    direct realized-result features are valid production signals.
-    """
+    """Non-submitting deployed V3-lite model/live-gate diagnostic."""
     import os
 
     os.environ.setdefault("V3_HISTORY_CACHE_PATH", "/v3-data/company_history.sqlite")
@@ -152,18 +133,10 @@ def check_production():
         print("[PROD_MODAL_DIAGNOSTIC] " + " ".join(f"{k}={v}" for k, v in result.items()))
         return result
 
-    gate = evaluate_v3_lite_live_gate(
-        model,
-        min_submitted_spread=0.05,
-        min_adjacent_rank_steps=5,
-    )
+    gate = evaluate_v3_lite_live_gate(model, min_submitted_spread=0.05, min_adjacent_rank_steps=5)
     scenario_by_label = {scenario.label: scenario for scenario in gate.scenarios}
     model_matches = model.model_version == expected_model
-    metadata_ok = (
-        model.operator_override
-        and model.production_candidate
-        and not model.promoted
-    )
+    metadata_ok = model.operator_override and model.production_candidate and not model.promoted
     status = "PASS" if model_matches and metadata_ok and gate.passed else "FAIL"
     result = {
         "status": status,
@@ -205,7 +178,7 @@ def web():
     from explaining_markets.config import Config
     from explaining_markets.event_utils import log_deadline
 
-    api = FastAPI(title="Explaining Markets starter")
+    api = FastAPI(title="Explaining Markets")
 
     @api.get("/")
     def health() -> dict:

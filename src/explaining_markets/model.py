@@ -1,5 +1,9 @@
-"""Production percentile models and fail-safe default-model selection."""
+"""Production percentile models and fail-safe default-model selection.
 
+The current production model is the operator-selected V3-lite artifact. The
+validated FLS Ridge model is retained only as an explicit emergency rollback;
+heuristic and constant models are last-resort fail-safe fallbacks.
+"""
 from __future__ import annotations
 
 import json
@@ -16,7 +20,6 @@ from explaining_markets.forward_looking_features import (
 )
 
 DEFAULT_ARTIFACT_PATH = Path(__file__).with_name("artifacts") / "fls_ridge_v1.json"
-DEFAULT_V2_ARTIFACT_PATH = Path(__file__).with_name("artifacts") / "fls_company_history_ridge_v2.json"
 
 
 @runtime_checkable
@@ -34,7 +37,7 @@ class BaselineModel:
 
 
 class HeuristicFactModel:
-    """Existing transparent disclosure heuristic, retained as production fallback."""
+    """Transparent disclosure fallback used only if trained models fail."""
 
     _STEP = 0.08
     _LOWER = 0.10
@@ -49,7 +52,7 @@ class HeuristicFactModel:
 
 
 class ForwardLookingRidgeModel:
-    """Pure-Python inference from the serialized paper-informed Ridge artifact."""
+    """Validated V1 artifact retained solely as an emergency rollback."""
 
     def __init__(self, artifact_path: str | Path | None = None) -> None:
         self.artifact_path = Path(artifact_path) if artifact_path else DEFAULT_ARTIFACT_PATH
@@ -104,75 +107,8 @@ class ForwardLookingRidgeModel:
         return self.predict_features(features), features
 
 
-class CompanyHistoryRidgeModel:
-    """Offline/evaluation V2 model retained for reproducibility, not live promotion."""
-
-    def __init__(self, artifact_path: str | Path | None = None) -> None:
-        from explaining_markets.features_v2 import MODEL_FEATURE_NAMES_V2
-
-        self.artifact_path = Path(artifact_path) if artifact_path else DEFAULT_V2_ARTIFACT_PATH
-        raw = json.loads(self.artifact_path.read_text(encoding="utf-8"))
-        self.model_version = str(raw["model_version"])
-        self.feature_names = tuple(str(x) for x in raw["feature_names"])
-        self.means = tuple(float(x) for x in raw["means"])
-        self.standard_deviations = tuple(float(x) for x in raw["standard_deviations"])
-        self.coefficients = tuple(float(x) for x in raw["coefficients"])
-        self.intercept = float(raw["intercept"])
-        bounds = raw.get("clip_bounds", [0.05, 0.95])
-        self.clip_lower, self.clip_upper = float(bounds[0]), float(bounds[1])
-        self.alpha = float(raw["selected_alpha"])
-        self.promoted = bool(raw.get("promoted", False))
-        self.training_metadata = dict(raw.get("training_metadata") or {})
-        self._expected_names = MODEL_FEATURE_NAMES_V2
-        self._validate()
-
-    def _validate(self) -> None:
-        if self.feature_names != self._expected_names:
-            raise ValueError("V2 artifact feature order does not match production extractor")
-        n = len(self.feature_names)
-        if not (len(self.means) == len(self.standard_deviations) == len(self.coefficients) == n):
-            raise ValueError("V2 artifact vector lengths do not match")
-        numbers = (*self.means, *self.standard_deviations, *self.coefficients, self.intercept)
-        if not all(math.isfinite(x) for x in numbers):
-            raise ValueError("V2 artifact contains non-finite parameters")
-        if any(sd <= 0.0 for sd in self.standard_deviations):
-            raise ValueError("V2 artifact standard deviations must be positive")
-        if not (0.0 <= self.clip_lower < self.clip_upper <= 1.0):
-            raise ValueError("V2 artifact clip bounds are invalid")
-
-    def predict_vector(self, vector: "object") -> float:
-        raw = vector.vector(self.feature_names)
-        prediction = self.intercept + sum(
-            coef * (value - mean) / sd
-            for coef, value, mean, sd in zip(
-                self.coefficients, raw, self.means, self.standard_deviations, strict=True
-            )
-        )
-        if not math.isfinite(prediction):
-            raise ValueError("V2 Ridge produced a non-finite prediction")
-        return float(max(self.clip_lower, min(self.clip_upper, prediction)))
-
-    def predict(self, *, disclosure: list[str], history) -> tuple[float, "object"]:
-        from explaining_markets.features_v2 import build_feature_vector_v2
-
-        vector = build_feature_vector_v2(
-            fls=extract_forward_looking_features(disclosure), history=history
-        )
-        return self.predict_vector(vector), vector
-
-
 def get_default_model():
-    """Production chain: operator V3-lite -> promoted V3 -> V1 -> heuristic.
-
-    The user explicitly authorized the V3-lite operator candidate for the
-    2026-08-19 live session after real-event logs showed V1 receiving non-empty
-    disclosures but producing an all-zero FLS vector and identical raw scores.
-
-    The candidate artifact is still marked ``promoted=false``.  We do not
-    rewrite the untouched-holdout gate; instead, the runtime requires explicit
-    operator-override metadata in the separate candidate artifact.  Set
-    ``PRODUCTION_MODEL=v1`` for an immediate rollback.
-    """
+    """Production chain: V3-lite -> promoted V3 -> emergency V1 -> heuristic."""
     requested = os.getenv("PRODUCTION_MODEL", "v3_lite_candidate").strip().lower()
 
     if requested not in {"v1", "fls_ridge_v1"}:
@@ -186,30 +122,29 @@ def get_default_model():
             )
             return candidate
         except FileNotFoundError:
-            print("[MODEL] V3-lite candidate artifact missing; checking normal production chain")
+            print("[MODEL] V3-lite candidate artifact missing; checking promoted V3")
         except Exception as exc:
             print(
-                "[MODEL] V3-lite candidate unavailable/invalid; checking normal production chain: "
+                "[MODEL] V3-lite candidate unavailable/invalid; checking promoted V3: "
                 f"{type(exc).__name__}"
             )
 
-    if requested not in {"v1", "fls_ridge_v1"}:
         try:
             from explaining_markets.model_v3 import MultiSignalV3Model
 
             v3 = MultiSignalV3Model()
             if v3.promoted:
                 return v3
-            print("[MODEL] V3 artifact present but not promoted; using fls_ridge_v1")
+            print("[MODEL] V3 artifact present but not promoted; using emergency V1")
         except FileNotFoundError:
             pass
         except Exception as exc:
-            print(f"[MODEL] V3 artifact unavailable/invalid; using fls_ridge_v1: {type(exc).__name__}")
+            print(f"[MODEL] promoted V3 unavailable/invalid: {type(exc).__name__}")
 
     try:
         return ForwardLookingRidgeModel()
     except Exception as exc:
-        print(f"[MODEL] fls_ridge unavailable; using heuristic fallback: {type(exc).__name__}")
+        print(f"[MODEL] emergency V1 unavailable; using heuristic: {type(exc).__name__}")
         try:
             return HeuristicFactModel()
         except Exception:
