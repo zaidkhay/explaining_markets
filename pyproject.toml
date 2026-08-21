@@ -1,7 +1,7 @@
 [project]
-name = "explaining-markets-modal-starter"
+name = "explaining-markets"
 version = "0.1.0b1"
-description = "A minimal Modal starter for the Explaining Markets competition."
+description = "Production V3-lite market-reaction forecasting system for Explaining Markets."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -11,7 +11,6 @@ dependencies = [
     "httpx>=0.27",
     "openai>=1.40",
     "pydantic>=2.6",
-    # Needed locally so `modal deploy` can read .env via Secret.from_dotenv.
     "python-dotenv>=1.0",
 ]
 
@@ -19,18 +18,13 @@ dependencies = [
 dev = [
     "pytest>=8.3",
 ]
-# Offline quantitative research only (feature_store.py / experiment.py /
-# backtest.py). NOT read by modal_app.py's deploy image — that image's
-# dependency list is the explicit `pip_install(...)` call in modal_app.py,
-# so adding research-only packages here has zero effect on what gets
-# deployed to the live webhook.
+# Active offline V3-lite retraining only. These packages are not installed in
+# the Modal image unless modal_app.py explicitly adds them.
 research = [
     "numpy>=1.26",
     "scikit-learn>=1.4",
 ]
 
-# Mirror of the dev/research groups for pip users (`pip install -e ".[dev,research]"`)
-# — plain pip doesn't read [dependency-groups]. Keep the lists in sync.
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
@@ -41,16 +35,10 @@ research = [
 ]
 
 [tool.uv]
-# `uv run` / `uv sync` include these by default so `uv run pytest` picks up
-# the research-only tests without an extra `--group research` flag. Deploy
-# is unaffected — see the comment on the `research` group above.
 default-groups = ["dev", "research"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# The package is importable via the editable install (which points at src/).
-# "." restores only the repo-root entry that the top-level entry scripts
-# (predict.py, modal_app.py) need — it does not re-expose the package from root.
 pythonpath = ["."]
 
 [build-system]
