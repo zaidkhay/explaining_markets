@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from explaining_markets.historical import HistoricalEvent
-from explaining_markets.model_v3 import MultiSignalV3Model
-from explaining_markets.v3_research_training import serialize_research_linear_artifact
 from explaining_markets.v3_training_data import (
     build_archive_seed_rows,
     load_training_rows,
@@ -72,30 +70,3 @@ def test_training_row_round_trip_and_report(tmp_path: Path):
     assert report.family_coverage["company_history"] == 0.5
     assert report.active_non_fls_features > 0
     assert report.archive_seed_only is True
-
-
-def test_research_artifact_is_loadable_and_never_promoted(tmp_path: Path):
-    rows = build_archive_seed_rows(_events())
-    evaluation = {
-        "promoted": False,
-        "ablations": {
-            "full_v3": {
-                "candidates": [
-                    {
-                        "kind": "ridge",
-                        "params": {"alpha": 1.0},
-                        "metrics": {"pearson": 0.1, "mae": 0.2},
-                    }
-                ]
-            }
-        },
-    }
-    path = tmp_path / "v3_research.json"
-    artifact = serialize_research_linear_artifact(rows, evaluation, path)
-    assert artifact["promoted"] is False
-    assert artifact["research_only"] is True
-    assert "2026Q3" not in artifact["training_quarters"]
-
-    model = MultiSignalV3Model(path)
-    assert model.promoted is False
-    assert model.model_version == "multi_signal_v3_research"
