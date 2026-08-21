@@ -1,9 +1,4 @@
-"""Pure-Python runtime for an explicitly operator-selected V3-lite candidate.
-
-This is intentionally separate from the normal promotion path. The artifact
-must remain marked ``promoted: false`` and ``operator_override: true`` so we do
-not pretend the untouched-holdout gate passed.
-"""
+"""Pure-Python runtime for the deployed V3-lite candidate."""
 from __future__ import annotations
 
 import json
@@ -13,14 +8,11 @@ from pathlib import Path
 from explaining_markets.calibration import PercentileCalibrator
 from explaining_markets.disclosure_results_v3 import PARSER_VERSION
 from explaining_markets.features_v3 import FEATURE_SPEC_VERSION_V3, FeatureVectorV3, MODEL_FEATURE_NAMES_V3
-from explaining_markets.model_v3 import MultiSignalV3Model
 
-DEFAULT_V3_LITE_CANDIDATE_PATH = (
-    Path(__file__).with_name("artifacts") / "v3_lite_candidate.json"
-)
+DEFAULT_V3_LITE_CANDIDATE_PATH = Path(__file__).with_name("artifacts") / "v3_lite_candidate.json"
 
 
-class V3LiteCandidateModel(MultiSignalV3Model):
+class V3LiteCandidateModel:
     """Linear V3-lite model with OOS empirical-percentile calibration."""
 
     def __init__(self, artifact_path: str | Path | None = None) -> None:

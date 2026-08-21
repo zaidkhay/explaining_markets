@@ -7,26 +7,18 @@ from datetime import datetime, timezone
 import httpx
 
 from explaining_markets.features import extract_features
-from explaining_markets.model import (
-    BaselineModel,
-    ForwardLookingRidgeModel,
-    HeuristicFactModel,
-    get_default_model,
-)
+from explaining_markets.model import BaselineModel, ForwardLookingRidgeModel, HeuristicFactModel, get_default_model
 
 _FETCH_TIMEOUT_SECONDS = 20.0
 _production_calibrator_cache: list = []
 
 
 def _production_calibrator(model_version: str):
-    """Load the emergency V1 calibrator only if the runtime falls back to V1."""
     if not _production_calibrator_cache:
         try:
             from explaining_markets.production_runtime import load_production_calibrator
 
-            _production_calibrator_cache.append(
-                load_production_calibrator(expected_model_version=model_version)
-            )
+            _production_calibrator_cache.append(load_production_calibrator(expected_model_version=model_version))
         except Exception as exc:
             print(f"[PROD_CALIBRATION] load failed error={type(exc).__name__}; using raw V1")
             _production_calibrator_cache.append(None)
@@ -67,7 +59,6 @@ def predict(event: dict) -> list[dict]:
     ]
     if not tickers:
         return []
-
     try:
         disclosure = _fetch_disclosure(event.get("information_url"))
     except Exception as exc:
@@ -77,40 +68,27 @@ def predict(event: dict) -> list[dict]:
     model = get_default_model()
     cutoff = _event_cutoff(event)
     _log_live_input(event, tickers, disclosure, cutoff)
-    return [
-        {
-            "identifier_value": ticker,
-            "predicted_percentile": float(
-                _predict_one(
-                    model=model,
-                    ticker=ticker,
-                    event_type=str(event.get("event_type") or "UNKNOWN"),
-                    disclosure=disclosure,
-                    cutoff=cutoff,
-                    event=event,
-                )
-            ),
-        }
-        for ticker in tickers
-    ]
+    out = []
+    for ticker in tickers:
+        prediction = _predict_one(
+            model=model,
+            ticker=ticker,
+            event_type=str(event.get("event_type") or "UNKNOWN"),
+            disclosure=disclosure,
+            cutoff=cutoff,
+            event=event,
+        )
+        out.append({"identifier_value": ticker, "predicted_percentile": float(prediction)})
+    return out
 
 
-def _predict_one(
-    *,
-    model,
-    ticker: str,
-    event_type: str,
-    disclosure: list[str],
-    cutoff=None,
-    event: dict | None = None,
-) -> float:
-    """Score one asset through V3, then emergency V1/heuristic fallbacks."""
+def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str], cutoff=None, event=None) -> float:
     try:
-        from explaining_markets.model_v3 import MultiSignalV3Model
+        from explaining_markets.model_v3_lite import V3LiteCandidateModel
     except Exception:
-        MultiSignalV3Model = ()  # type: ignore[assignment]
+        V3LiteCandidateModel = ()  # type: ignore[assignment]
 
-    if MultiSignalV3Model and isinstance(model, MultiSignalV3Model):
+    if V3LiteCandidateModel and isinstance(model, V3LiteCandidateModel):
         try:
             from explaining_markets.evidence_bundle import persist_evidence_bundle
             from explaining_markets.features_v3 import build_feature_vector_v3, family_availability
@@ -122,22 +100,13 @@ def _predict_one(
             actual_cutoff = cutoff or datetime.now(timezone.utc)
             live_event = dict(event or {})
             live_event["disclosure"] = list(disclosure)
-            providers = (
-                default_provider_bundle_from_env()
-                if live_event.get("information_url")
-                else V3ProviderBundle.null()
-            )
-            context = build_live_v3_context(
-                ticker=ticker,
-                event=live_event,
-                cutoff=actual_cutoff,
-                providers=providers,
-            )
+            providers = default_provider_bundle_from_env() if live_event.get("information_url") else V3ProviderBundle.null()
+            context = build_live_v3_context(ticker=ticker, event=live_event, cutoff=actual_cutoff, providers=providers)
             audit = audit_context(context)
             vector = build_feature_vector_v3(disclosure=disclosure, context=context)
             prediction = model.predict_vector(vector)
-            availability = family_availability(vector)
             feed = feed_diagnostics(context)
+            unavailable = ",".join(name for name, value in family_availability(vector).items() if not value) or "none"
             print(
                 "[V3_FEED] "
                 f"ticker={ticker} cutoff={actual_cutoff.isoformat()} "
@@ -145,25 +114,17 @@ def _predict_one(
                 f"guidance_received={feed['guidance_received']} price_rows={feed['price_rows']} "
                 f"peer_count={feed['peer_count']} company_news_count={feed['company_news_count']} "
                 f"peer_news_count={feed['peer_news_count']} sector_news_count={feed['sector_news_count']} "
-                f"reasoned_news_count={feed['reasoned_news_count']} cutoff_audit=PASS "
-                f"records_checked={audit.records_checked}"
+                f"reasoned_news_count={feed['reasoned_news_count']} cutoff_audit=PASS records_checked={audit.records_checked}"
             )
             reasoning = context.event_reasoning
             if reasoning is not None:
                 print(
                     "[V3_REASONING] "
                     f"ticker={ticker} earnings_quality={reasoning.earnings_quality:.3f} "
-                    f"revenue_quality={reasoning.revenue_quality:.3f} "
-                    f"guidance_quality={reasoning.guidance_quality:.3f} "
-                    f"expectations_gap={reasoning.expectations_gap:.3f} "
-                    f"priced_in_score={reasoning.priced_in_score:.3f} "
-                    f"company_news_signal={reasoning.company_news_signal:.3f} "
-                    f"peer_signal={reasoning.peer_signal:.3f} sector_signal={reasoning.sector_signal:.3f} "
-                    f"contradiction_score={reasoning.contradiction_score:.3f} "
+                    f"revenue_quality={reasoning.revenue_quality:.3f} guidance_quality={reasoning.guidance_quality:.3f} "
                     f"overall_event_signal={reasoning.overall_event_signal:.3f} "
                     f"materiality={reasoning.materiality:.3f} confidence={reasoning.confidence:.3f}"
                 )
-            unavailable = ",".join(name for name, value in availability.items() if not value) or "none"
             print(
                 f"[V3_PREDICT] ticker={ticker} model={model.model_version} "
                 f"prediction={prediction:.4f} fallback=none unavailable_families={unavailable}"
@@ -190,7 +151,6 @@ def _predict_one(
     if isinstance(model, ForwardLookingRidgeModel):
         try:
             raw_prediction, fls = model.predict_with_features(disclosure)
-            values = fls.values
             final_prediction = float(raw_prediction)
             calibration_status = "raw"
             calibrator = _production_calibrator(model.model_version)
@@ -200,7 +160,7 @@ def _predict_one(
             print(
                 "[V1_ROLLBACK] "
                 f"ticker={ticker} raw={raw_prediction:.4f} submitted={final_prediction:.4f} "
-                f"fls_ratio={values['fls_ratio']:.3f} calibration={calibration_status}"
+                f"fls_ratio={fls.values['fls_ratio']:.3f} calibration={calibration_status}"
             )
             return _bounded(final_prediction)
         except Exception as exc:
@@ -211,27 +171,20 @@ def _predict_one(
         try:
             features = extract_features(ticker=ticker, event_type=event_type, disclosure=disclosure)
             prediction = model.predict_percentile(features)
-            print(
-                f"[PREDICT] ticker={ticker} model=heuristic_fact "
-                f"net_sentiment={features.net_sentiment} prediction={prediction:.4f}"
-            )
+            print(f"[PREDICT] ticker={ticker} model=heuristic_fact prediction={prediction:.4f}")
             return _bounded(prediction)
         except Exception as exc:
             print(f"[PREDICT] ticker={ticker} heuristic failed: {type(exc).__name__}; using baseline")
 
-    baseline = BaselineModel()
-    features = extract_features(ticker=ticker, event_type=event_type, disclosure=[])
-    return baseline.predict_percentile(features)
+    return BaselineModel().predict_percentile(
+        extract_features(ticker=ticker, event_type=event_type, disclosure=[])
+    )
 
 
 def _fetch_disclosure(information_url: str | None) -> list[str]:
     if not information_url:
         return []
-    response = httpx.get(
-        information_url,
-        timeout=_FETCH_TIMEOUT_SECONDS,
-        follow_redirects=True,
-    )
+    response = httpx.get(information_url, timeout=_FETCH_TIMEOUT_SECONDS, follow_redirects=True)
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, dict):
@@ -253,26 +206,21 @@ def _fetch_disclosure(information_url: str | None) -> list[str]:
     facts = facts_from_items(payload.get("items"))
     if facts:
         return facts
-
     disclosure = payload.get("disclosure") or {}
     if isinstance(disclosure, dict):
         facts = facts_from_items(disclosure.get("items"))
         if facts:
             return facts
-
     facts = payload.get("facts")
     if isinstance(facts, list):
         return [str(x) for x in facts if str(x).strip()]
     if isinstance(facts, str) and facts.strip():
         return [facts]
-
     summary = payload.get("summary")
     if isinstance(summary, str) and summary.strip():
         return [summary]
     if isinstance(summary, list):
         return [str(x) for x in summary if str(x).strip()]
-
-    # Fail closed: schema metadata is not disclosure evidence.
     return []
 
 

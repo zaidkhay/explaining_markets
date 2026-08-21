@@ -1,9 +1,4 @@
-"""Production percentile models and fail-safe default-model selection.
-
-The current production model is the operator-selected V3-lite artifact. The
-validated FLS Ridge model is retained only as an explicit emergency rollback;
-heuristic and constant models are last-resort fail-safe fallbacks.
-"""
+"""Production model selection and emergency fallbacks."""
 from __future__ import annotations
 
 import json
@@ -37,8 +32,6 @@ class BaselineModel:
 
 
 class HeuristicFactModel:
-    """Transparent disclosure fallback used only if trained models fail."""
-
     _STEP = 0.08
     _LOWER = 0.10
     _UPPER = 0.90
@@ -108,7 +101,7 @@ class ForwardLookingRidgeModel:
 
 
 def get_default_model():
-    """Production chain: V3-lite -> promoted V3 -> emergency V1 -> heuristic."""
+    """Production chain: V3-lite candidate -> emergency V1 -> heuristic."""
     requested = os.getenv("PRODUCTION_MODEL", "v3_lite_candidate").strip().lower()
 
     if requested not in {"v1", "fls_ridge_v1"}:
@@ -122,24 +115,9 @@ def get_default_model():
             )
             return candidate
         except FileNotFoundError:
-            print("[MODEL] V3-lite candidate artifact missing; checking promoted V3")
+            print("[MODEL] V3-lite candidate artifact missing; using emergency V1")
         except Exception as exc:
-            print(
-                "[MODEL] V3-lite candidate unavailable/invalid; checking promoted V3: "
-                f"{type(exc).__name__}"
-            )
-
-        try:
-            from explaining_markets.model_v3 import MultiSignalV3Model
-
-            v3 = MultiSignalV3Model()
-            if v3.promoted:
-                return v3
-            print("[MODEL] V3 artifact present but not promoted; using emergency V1")
-        except FileNotFoundError:
-            pass
-        except Exception as exc:
-            print(f"[MODEL] promoted V3 unavailable/invalid: {type(exc).__name__}")
+            print(f"[MODEL] V3-lite candidate unavailable/invalid: {type(exc).__name__}")
 
     try:
         return ForwardLookingRidgeModel()
