@@ -6,12 +6,13 @@ or, when per-event diagnostic JSON already contains prediction/realized data:
     event_id,ticker
 
 Optional columns:
-    event_id,date,car1,diagnostic_json
+    event_id,date,car1,diagnostic_json,evidence_path
 
-Example:
-    uv run python scripts/analyze_recent_live_results.py \
-      --input data/live_eval/recent.csv \
-      --output-dir data/diagnostics/recent_eval
+When ``evidence_path`` points at a persisted Modal V3 evidence bundle, this
+script adapts both the old evidence schema and the richer current schema into
+the prediction-diagnostics shape consumed by the analyzer. That lets old live
+predictions contribute provider/family-availability diagnostics even when they
+predate exact feature-contribution persistence.
 """
 from __future__ import annotations
 
@@ -31,6 +32,93 @@ def _load_rows(path: Path) -> list[dict]:
         return [dict(row) for row in rows if isinstance(row, dict)]
     with path.open("r", encoding="utf-8", newline="") as handle:
         return [dict(row) for row in csv.DictReader(handle)]
+
+
+def _adapt_evidence(rows: list[dict], *, root: Path, model: V3LiteCandidateModel) -> list[dict]:
+    """Materialize a diagnostic-compatible view of old/new Modal evidence."""
+    adapted_root = root / "adapted_evidence"
+    adapted_root.mkdir(parents=True, exist_ok=True)
+    out: list[dict] = []
+
+    for source in rows:
+        row = dict(source)
+        explicit_diag = str(row.get("diagnostic_json") or "").strip()
+        if explicit_diag and Path(explicit_diag).exists():
+            out.append(row)
+            continue
+
+        evidence_raw = str(row.get("evidence_path") or "").strip()
+        evidence_path = Path(evidence_raw) if evidence_raw else None
+        if evidence_path is None or not evidence_path.exists():
+            out.append(row)
+            continue
+        try:
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            out.append(row)
+            continue
+        if not isinstance(evidence, dict):
+            out.append(row)
+            continue
+
+        nested = evidence.get("prediction_diagnostics")
+        diagnostic = dict(nested) if isinstance(nested, dict) else {}
+
+        external = dict(diagnostic.get("external_context") or {})
+        external.setdefault("family_availability", evidence.get("feature_availability") or {})
+        receipts = evidence.get("provider_receipts") or []
+        if isinstance(receipts, list):
+            external.setdefault(
+                "provider_successes",
+                sum(1 for item in receipts if isinstance(item, dict) and item.get("status") == "ok"),
+            )
+            external.setdefault(
+                "provider_errors",
+                sum(1 for item in receipts if isinstance(item, dict) and item.get("status") == "error"),
+            )
+            external.setdefault("provider_receipts", receipts)
+        values = evidence.get("feature_values") or {}
+        if isinstance(values, dict):
+            external.setdefault(
+                "nonzero_deployed_features",
+                sum(abs(float(values.get(name, 0.0) or 0.0)) > 1e-12 for name in model.feature_names),
+            )
+            external.setdefault("deployed_feature_count", len(model.feature_names))
+        diagnostic["external_context"] = external
+
+        # New evidence already carries exact score/claim contributions inside
+        # prediction_diagnostics. Old evidence cannot recreate those after the
+        # fact, but preserving the submitted/raw numbers is still useful.
+        score = dict(diagnostic.get("score") or {})
+        if "submitted_percentile" not in score and evidence.get("prediction") is not None:
+            score["submitted_percentile"] = float(evidence["prediction"])
+        if "raw_score" not in score and evidence.get("raw_prediction") is not None:
+            score["raw_score"] = float(evidence["raw_prediction"])
+        diagnostic["score"] = score
+        diagnostic.setdefault("claims", [])
+        diagnostic.setdefault("diagnostic_signal", {})
+        diagnostic["event"] = {
+            "event_id": row.get("event_id") or evidence.get("event_id"),
+            "ticker": row.get("ticker") or evidence.get("ticker"),
+            "cutoff": evidence.get("cutoff"),
+        }
+        diagnostic["realized"] = {
+            "car1": None if row.get("car1") in (None, "") else float(row["car1"]),
+            "realized_percentile": (
+                None if row.get("realized_percentile") in (None, "") else float(row["realized_percentile"])
+            ),
+        }
+
+        event_id = str(row.get("event_id") or evidence.get("event_id") or "unknown")
+        ticker = str(row.get("ticker") or evidence.get("ticker") or "UNKNOWN").upper()
+        safe_event = "".join(c for c in event_id if c.isalnum() or c in "-_") or "unknown"
+        safe_ticker = "".join(c for c in ticker if c.isalnum() or c in ".-_") or "UNKNOWN"
+        target = adapted_root / f"{safe_event}__{safe_ticker}.json"
+        target.write_text(json.dumps(diagnostic, indent=2, sort_keys=True), encoding="utf-8")
+        row["diagnostic_json"] = str(target)
+        out.append(row)
+
+    return out
 
 
 def _fmt(value) -> str:
@@ -57,7 +145,7 @@ def _markdown(report: dict) -> str:
         "",
         "## Calibration/extremeness counterfactuals",
         "",
-        "These are retrospective diagnostics only. They are not automatically promoted.",
+        "These are retrospective diagnostics only. They are not automatically promoted. Note that uniform affine shrinkage does not change the official Delta-R2 objective; this section diagnoses absolute percentile error only.",
         "",
         "| Shrink factor | Spearman | MAE | RMSE | Mean predicted extremeness |",
         "| ---: | ---: | ---: | ---: | ---: |",
@@ -113,7 +201,7 @@ def _markdown(report: dict) -> str:
         "",
         "## Promotion rule",
         "",
-        "Do not change production weights from this live sample alone. Implement each high-priority hypothesis as an ablation/candidate and require chronological historical validation improvement plus the existing live gate before promotion.",
+        "Do not change production weights from this live sample alone. Implement each high-priority hypothesis as an ablation/candidate and require chronological historical validation improvement on the official Delta-R2 objective plus the existing live gate before promotion.",
         "",
     ]
     return "\n".join(lines)
@@ -130,6 +218,10 @@ def main() -> int:
     input_path = Path(args.input)
     rows = _load_rows(input_path)
     model = V3LiteCandidateModel()
+    root = Path(args.output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    rows = _adapt_evidence(rows, root=root, model=model)
+
     validation = dict(model.training_metadata.get("validation_metrics") or {})
     report = analyze_recent_results(
         rows,
@@ -137,8 +229,6 @@ def main() -> int:
         validation_metrics=validation,
     )
 
-    root = Path(args.output_dir)
-    root.mkdir(parents=True, exist_ok=True)
     json_path = root / "analysis.json"
     md_path = root / "analysis.md"
     json_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
