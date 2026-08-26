@@ -8,8 +8,10 @@ Workflow:
      joins exact persisted predictions by (event_id, ticker), and evaluates the
      recent joined sample with the frozen competition Delta-R^2 formula.
 
-The organizer's live/final scorer remains authoritative. This is intended to
-match its transform on whatever scored archive rows are currently available.
+Because a recent live slice can be small, the report also includes a
+conditional nonparametric bootstrap and leave-one-out sensitivity diagnostic.
+These are stability diagnostics, not the organizer's official confidence
+interval; the organizer's live/final scorer remains authoritative.
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ import argparse
 import csv
 import gzip
 import json
+import random
 from datetime import datetime
 from pathlib import Path
 
@@ -126,6 +129,108 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
+def _score(rows: list[dict]) -> dict:
+    if len(rows) < 3:
+        return {
+            "n": len(rows),
+            "r_squared_surprise": None,
+            "r_squared": None,
+            "delta_r_squared": None,
+            "beta": None,
+            "beta_surprise": None,
+            "alpha": None,
+            "mse": None,
+        }
+    return score_complete_predictions(
+        [row["predicted_percentile"] for row in rows],
+        [row["realized_percentile"] for row in rows],
+        [row["surprise_percentile"] for row in rows],
+    )
+
+
+def _percentile(values: list[float], q: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(float(x) for x in values)
+    if len(ordered) == 1:
+        return ordered[0]
+    pos = max(0.0, min(1.0, q)) * (len(ordered) - 1)
+    lo = int(pos)
+    hi = min(len(ordered) - 1, lo + 1)
+    weight = pos - lo
+    return ordered[lo] * (1.0 - weight) + ordered[hi] * weight
+
+
+def _uncertainty(rows: list[dict], *, repetitions: int = 2000, seed: int = 7) -> dict:
+    base = _score(rows)
+    base_delta = base.get("delta_r_squared")
+    if len(rows) < 4 or base_delta is None:
+        return {
+            "bootstrap_repetitions": repetitions,
+            "bootstrap_valid": 0,
+            "delta_r2_p025": None,
+            "delta_r2_median": None,
+            "delta_r2_p975": None,
+            "bootstrap_fraction_positive": None,
+            "leave_one_out_min": None,
+            "leave_one_out_max": None,
+            "most_score_supportive_event": None,
+            "most_score_harmful_event": None,
+            "note": "insufficient rows for stability diagnostics",
+        }
+
+    rng = random.Random(seed)
+    boot: list[float] = []
+    n = len(rows)
+    for _ in range(max(0, int(repetitions))):
+        sample = [rows[rng.randrange(n)] for _j in range(n)]
+        delta = _score(sample).get("delta_r_squared")
+        if delta is not None:
+            boot.append(float(delta))
+
+    loo: list[dict] = []
+    for index, row in enumerate(rows):
+        subset = rows[:index] + rows[index + 1 :]
+        delta = _score(subset).get("delta_r_squared")
+        if delta is None:
+            continue
+        change_without = float(delta) - float(base_delta)
+        loo.append({
+            "event_id": row.get("event_id"),
+            "ticker": row.get("ticker"),
+            "delta_r2_without_event": float(delta),
+            # Positive => removing this event improves the score, so this event
+            # was harmful to the observed recent Delta-R2. Negative => removing
+            # it lowers the score, so it was supportive.
+            "change_without_event": change_without,
+        })
+
+    supportive = min(loo, key=lambda x: x["change_without_event"]) if loo else None
+    harmful = max(loo, key=lambda x: x["change_without_event"]) if loo else None
+    loo_values = [x["delta_r2_without_event"] for x in loo]
+    return {
+        "bootstrap_repetitions": int(repetitions),
+        "bootstrap_seed": int(seed),
+        "bootstrap_valid": len(boot),
+        "delta_r2_p025": _percentile(boot, 0.025),
+        "delta_r2_median": _percentile(boot, 0.50),
+        "delta_r2_p975": _percentile(boot, 0.975),
+        "bootstrap_fraction_positive": None if not boot else sum(x > 0 for x in boot) / len(boot),
+        "leave_one_out_min": min(loo_values) if loo_values else None,
+        "leave_one_out_max": max(loo_values) if loo_values else None,
+        "most_score_supportive_event": supportive,
+        "most_score_harmful_event": harmful,
+        "note": (
+            "Conditional stability diagnostic over the currently joined recent slice. "
+            "Quarter-wide CAR1/surprise percentile ranks are held fixed; this is not an organizer-issued confidence interval."
+        ),
+    }
+
+
+def _fmt(value) -> str:
+    return "n/a" if value is None else f"{float(value):+.6f}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--quarter", default="2026Q3")
@@ -133,6 +238,8 @@ def main() -> int:
     parser.add_argument("--evidence-dir", default="data/live_eval/evidence")
     parser.add_argument("--output-dir", default="data/diagnostics/recent_eval")
     parser.add_argument("--since", help="Optional ISO date/datetime; filters joined events only after quarter-wide ranking")
+    parser.add_argument("--bootstrap", type=int, default=2000, help="Bootstrap repetitions for recent-score stability")
+    parser.add_argument("--bootstrap-seed", type=int, default=7)
     args = parser.parse_args()
 
     load_dotenv(".env")
@@ -161,23 +268,12 @@ def main() -> int:
     csv_path = root / "recent_joined.csv"
     _write_csv(csv_path, joined)
 
-    if len(joined) >= 3:
-        score = score_complete_predictions(
-            [row["predicted_percentile"] for row in joined],
-            [row["realized_percentile"] for row in joined],
-            [row["surprise_percentile"] for row in joined],
-        )
-    else:
-        score = {
-            "n": len(joined),
-            "r_squared_surprise": None,
-            "r_squared": None,
-            "delta_r_squared": None,
-            "beta": None,
-            "beta_surprise": None,
-            "alpha": None,
-            "mse": None,
-        }
+    score = _score(joined)
+    uncertainty = _uncertainty(
+        joined,
+        repetitions=max(0, int(args.bootstrap)),
+        seed=int(args.bootstrap_seed),
+    )
 
     report = {
         "quarter": args.quarter,
@@ -188,6 +284,7 @@ def main() -> int:
         "joined_recent_rows": len(joined),
         "since": args.since,
         "recent_subset_official_formula": score,
+        "stability": uncertainty,
         "note": (
             "CAR1 and surprise percentiles are ranked over every currently available archive outcome in the quarter. "
             "The Delta-R^2 fit is then reported on the joined recent subset; the official leaderboard/full contest common sample remains authoritative."
@@ -204,6 +301,32 @@ def main() -> int:
     print(f"R2 full: {score['r_squared']}")
     print(f"Delta R2: {score['delta_r_squared']}")
     print(f"prediction beta: {score['beta']}")
+    print("\nSTABILITY")
+    print(
+        "bootstrap Delta R2 95% interval: "
+        f"[{_fmt(uncertainty['delta_r2_p025'])}, {_fmt(uncertainty['delta_r2_p975'])}]"
+    )
+    print(f"bootstrap median: {_fmt(uncertainty['delta_r2_median'])}")
+    frac = uncertainty.get("bootstrap_fraction_positive")
+    print(f"bootstrap fraction Delta R2 > 0: {'n/a' if frac is None else f'{100*float(frac):.1f}%'}")
+    print(
+        "leave-one-out Delta R2 range: "
+        f"[{_fmt(uncertainty['leave_one_out_min'])}, {_fmt(uncertainty['leave_one_out_max'])}]"
+    )
+    if uncertainty.get("most_score_harmful_event"):
+        row = uncertainty["most_score_harmful_event"]
+        print(
+            "most score-harmful event: "
+            f"{row.get('ticker')} {row.get('event_id')} "
+            f"change_if_removed={float(row['change_without_event']):+.6f}"
+        )
+    if uncertainty.get("most_score_supportive_event"):
+        row = uncertainty["most_score_supportive_event"]
+        print(
+            "most score-supportive event: "
+            f"{row.get('ticker')} {row.get('event_id')} "
+            f"change_if_removed={float(row['change_without_event']):+.6f}"
+        )
     print(f"csv: {csv_path}")
     print(f"report: {json_path}")
     print("\nNext:")
