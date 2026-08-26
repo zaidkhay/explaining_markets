@@ -94,6 +94,7 @@ def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str], 
             from explaining_markets.features_v3 import build_feature_vector_v3, family_availability
             from explaining_markets.live_v3_context import build_live_v3_context, feed_diagnostics
             from explaining_markets.point_in_time_audit_v3 import audit_context
+            from explaining_markets.prediction_diagnostics import build_prediction_diagnostics
             from explaining_markets.providers.live_context import default_provider_bundle_from_env
             from explaining_markets.v3_providers import V3ProviderBundle
 
@@ -130,12 +131,21 @@ def _predict_one(*, model, ticker: str, event_type: str, disclosure: list[str], 
                 f"prediction={prediction:.4f} fallback=none unavailable_families={unavailable}"
             )
             try:
+                diagnostics = build_prediction_diagnostics(
+                    model=model,
+                    vector=vector,
+                    disclosure=disclosure,
+                    context=context,
+                )
                 persist_evidence_bundle(
                     context=context,
                     vector=vector,
                     event_id=str(live_event.get("event_id") or live_event.get("id") or "unknown"),
                     model_version=model.model_version,
                     prediction=prediction,
+                    raw_prediction=model.last_raw_prediction,
+                    disclosure=disclosure,
+                    prediction_diagnostics=diagnostics,
                 )
             except Exception as evidence_exc:
                 print(f"[V3_EVIDENCE] ticker={ticker} status=error error={type(evidence_exc).__name__}")
