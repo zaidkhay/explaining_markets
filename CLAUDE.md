@@ -478,8 +478,9 @@ sign-inverted relationships from sparse, noisy data.
   ablation, alpha, and feature count.
 - Verify against the live gates: negative / neutral / positive disclosure cases, parser checks,
   PIT checks, full test suite.
-- Baseline: **215 passed** for the main suite, plus **7 passed** diagnostic/scoring tests. A drop
-  in count without an explicit removal is a regression.
+- Baseline: **226 passed** (`uv run pytest`, full suite, as of the repo-hygiene cleanup). A drop
+  in count without an explicit removal is a regression. Previously documented here as
+  **215 + 7 = 222**; this section had not been updated as tests were added since.
 - The webhook has a hard time limit. Any change that adds provider calls to the live path is a
   latency risk. Measure before deploying.
 - **The system must always submit something.** A crash produces no submission. Failure paths
@@ -549,6 +550,12 @@ coverage is non-degenerate.
 - Never commit large data files (`data/`, archives, evidence dumps).
 - Do not rewrite published history.
 - `scripts/sweep_v3_lite_official_candidates.py` is **read-only** by design. Keep it that way.
+- Never `git add .` or `git add -A`. Stage explicit paths only — a blanket add is how unrelated
+  or unreviewed files (data dumps, stray gitlinks, scratch output) end up committed.
+- Run `git status` and read `git diff` (or `git diff --cached`) before every commit. Confirm
+  exactly what's staged matches what you intend.
+- Read git's warnings rather than letting them scroll past — a gitlink notice, a CRLF warning, a
+  "not tracking" message is often the only signal something is about to go in wrong.
 
 ### Commit messages
 
