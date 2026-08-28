@@ -37,8 +37,12 @@ information the earnings-surprise benchmark does not already contain.*
 Violating any of these can silently destroy the validity of months of work. Several are
 irreversible.
 
-1. **Never read 2026Q3 targets.** It is the first honest untouched holdout. Reading it once —
-   even "just to check" — converts it permanently into another selection set. There is no undo.
+1. **2026Q3's status has not yet been decided — do not let a Q3 number influence a
+   specification choice until a human has explicitly recorded that decision.** Scoring
+   already-submitted, frozen predictions against Q3 outcomes is legitimate: those predictions
+   were fixed before the outcomes existed, so nothing leaks (this is what §7.3's 18-of-59 join
+   diagnostic does). Using a Q3 result to choose between model specifications, hyperparameters,
+   or features spends the holdout — that conversion has no undo. See §1.2.
 2. **Never evaluate an artifact on a quarter it was fit on.** This bug has already happened once
    in `compare_v3_lite_official_score.py`. See §1.3.
 3. **Never fit on the live events.** The recent live predictions are for attribution and failure
@@ -49,7 +53,11 @@ irreversible.
    to its null expectation. See §2.
 6. **Never commit provider API keys** (Tiingo, Twelve Data, FMP, Finnhub, OpenRouter) or Modal
    credentials. Check diffs before every commit.
-7. **Never push directly to `main`.** `main` is the deployed branch. Use feature branches + PRs.
+7. **Work commits directly to `main` — but a commit on `main` is not a promotion.** Do not
+   create branches for ordinary work. Committing a candidate, a sweep, or an evaluation script
+   does **not** deploy or bless it. The deployed artifact changes only by explicit operator
+   sign-off, recorded with a `(promotion)` tag on the commit subject and a matching update to
+   §8.1. Never force-push `main`. See §11.
 8. **Never redeploy a Modal artifact without running `check_production` afterward.**
 9. **Do not invent a prediction confidence.** The model produces no calibrated probability of
    correctness. See §10.
@@ -65,7 +73,7 @@ irreversible.
 | 2025Q4  | 1,849 | Training |
 | 2026Q1  | 2,390 | Validation / model selection |
 | 2026Q2  | 2,060 | Legacy chronological read — **NOT pristine** |
-| 2026Q3  | —     | **Untouched holdout — do not read targets** |
+| 2026Q3  | —     | **Status undecided — see §1.2** |
 
 Total historical: 6,299 event rows, ~2,607 unique tickers.
 
@@ -79,9 +87,16 @@ Total historical: 6,299 event rows, ~2,607 unique tickers.
 - **2026Q2** — chronological but already inspected during prior research. Useful as a
   directional sanity check. Not admissible as confirmatory evidence. Always label it
   "non-pristine" in any writeup.
-- **2026Q3** — nothing. Do not compute percentiles on it, do not join it to predictions, do not
-  peek at CAR1 distributions. If a script needs a quarter argument, do not pass `2026Q3` unless
-  a human has explicitly declared the holdout spent.
+- **2026Q3** — status not yet decided. The actual distinction is what the number is *used for*,
+  not whether it's read:
+  - Scoring already-submitted, frozen predictions against Q3 outcomes is legitimate. Those
+    predictions were frozen before the outcomes existed, so nothing leaks — this is exactly
+    what §7.3's join diagnostic and the worked example in §2.4 do.
+  - Using a Q3 result to choose between model specifications, hyperparameters, or features
+    spends the holdout. **A human must explicitly record that decision before any Q3 number is
+    allowed to influence a specification choice.** That recording has not happened yet — until
+    it does, treat Q3 as closed for selection purposes even though scoring frozen predictions
+    against it is fine.
 
 ### 1.3 The leakage bug that already happened
 
@@ -336,6 +351,8 @@ theory predicts.
   before considering any model change.
 - If calibration is removed, confirm the `[0.05, 0.95]` clip still applies and that submissions
   remain in valid range.
+- Removing calibration from the **deployed** path is a promotion. It changes what production
+  submits, so it takes a `(promotion)` commit and a §8.1 update. See §11.
 
 ---
 
@@ -444,6 +461,11 @@ operator-selected candidate, not a statistically promoted model.
 **Do not flip `promoted` to True** without a genuine untouched-holdout evaluation. Do not
 describe the current model as promoted or validated in any writeup.
 
+**This block is the record of what is deployed.** It is updated only in a `(promotion)` commit,
+in the same commit that changes the artifact. If this block and the mounted artifact disagree,
+one of them is wrong and production is in an unknown state — stop and reconcile before doing
+anything else. See §11.
+
 ### 8.2 Prediction path
 
 ```
@@ -463,12 +485,16 @@ sign-inverted relationships from sparse, noisy data.
 ### 8.3 Deployment discipline
 
 - Only an explicitly selected artifact is mounted into Modal.
+- Because work lands directly on `main` and Modal reads from the tracked tree, **committing and
+  deploying are separated by convention, not by branch topology.** The `(promotion)` tag and
+  the §8.1 block are the entire audit trail. Treat them as load-bearing infrastructure.
 - Run `check_production` after every deploy and confirm it reports the expected model version,
-  ablation, alpha, and feature count.
+  ablation, alpha, and feature count. Paste the result into the promotion commit body.
 - Verify against the live gates: negative / neutral / positive disclosure cases, parser checks,
   PIT checks, full test suite.
-- Baseline: **215 passed** for the main suite, plus **7 passed** diagnostic/scoring tests. A drop
-  in count without an explicit removal is a regression.
+- Baseline: **226 passed** (`uv run pytest`, full suite, as of the repo-hygiene cleanup). A drop
+  in count without an explicit removal is a regression. Previously documented here as
+  **215 + 7 = 222**; this section had not been updated as tests were added since.
 - The webhook has a hard time limit. Any change that adds provider calls to the live path is a
   latency risk. Measure before deploying.
 - **The system must always submit something.** A crash produces no submission. Failure paths
@@ -511,6 +537,14 @@ Never assume ingestion works because the code runs. Verify against
 `[LIVE_INPUT]` logs that the actual facts arrived, and against `[V3_FEED]` that context
 coverage is non-degenerate.
 
+### 9.4 Undeclared promotion is a silent failure mode
+
+An artifact change that lands on `main` without a `(promotion)` tag looks exactly like any other
+commit in `git log`. It deploys anyway. Months later there is no way to attribute a score
+movement to it, because nothing in the history marks the date production changed. This belongs
+in the same category as the constant-score bug: nothing errors, everything looks healthy, and
+the record is wrong.
+
 ---
 
 ## 10. Terminology — do not conflate
@@ -524,24 +558,87 @@ coverage is non-degenerate.
 | **Delta R2** | Incremental R² beyond the benchmark |
 | **Interpretation confidence** | Confidence the parser *understood* a claim — **not** the probability the claim is true |
 | **Prediction confidence** | **Does not exist.** No calibrated correctness probability is produced. Do not invent, display, or imply one. |
+| **Commit** | A change to the repository. Says nothing about what is deployed. |
+| **Promotion** | A change to the deployed artifact. Requires operator sign-off, a `(promotion)`-tagged commit, and a §8.1 update. |
+| **`promoted = True`** | A *stronger* claim than promotion: that an untouched-holdout gate was passed. Currently False and should stay False. |
+
+Note the deliberate asymmetry: a `(promotion)` commit means "production changed." It does
+**not** mean the `promoted` flag may be flipped. Every deploy is a promotion; almost no deploy
+earns `promoted = True`.
 
 ---
 
 ## 11. Git and repo conventions
 
-- Branch from `main`; never commit to `main` directly. `main` reflects deployed state.
-- One concern per PR. Do not mix an evaluation-methodology fix with a model change — it becomes
-  impossible to attribute a score movement.
-- Especially careful with: `artifacts/v3_lite_candidate.json`, the calibration path, anything
-  under the webhook handler. A push to these can change what `check_production` validates.
+### 11.1 Branching and pushing
+
+- **All work commits directly to `main`.** No feature branches, no PRs for routine work.
+- **Do not create branches unless there is a stated, specific reason** — an experimental line
+  that must not touch the tree Modal reads, or a change genuinely too large to land atomically.
+  "Being careful" is not a reason. An unmerged branch is invisible work that silently drifts
+  from `main`, and this repo has one operator, so there is no review to gate on.
+- **Push to `origin main` after each logical commit.** Do not accumulate unpushed local history
+  — to everyone but you, an unpushed commit and uncommitted work are the same thing.
+- **Commits must be atomic and independently revertible.** `main` is the only line of history,
+  so `git revert` is the only rollback mechanism. A commit that cannot be reverted cleanly on
+  its own is too big.
+- **Never force-push `main`. Do not rewrite published history.** To undo, commit a revert.
+- **One concern per commit.** Do not mix an evaluation-methodology fix with a model change — it
+  becomes impossible to attribute a score movement, and impossible to revert one without the
+  other.
+
+### 11.2 A commit is not a promotion
+
+Since Modal mounts from the tracked artifact, "on `main`" and "in production" are nearly the
+same thing. The `(promotion)` tag is the only thing separating them in the record.
+
+- **Default: no tag.** A normal commit — including one that adds a candidate, runs a sweep,
+  writes an evaluation script, or scores something — **does not change what production
+  submits.** Most commits are this.
+- **A commit that changes the deployed artifact must end its subject line with `(promotion)`.**
+  This covers: swapping the mounted artifact, changing ablation / model type / alpha / feature
+  set, changing or removing the calibration path, and any change to the live prediction path
+  in §8.2 that alters submitted values.
+- **A `(promotion)` commit does nothing else.** No refactors, no drive-by fixes, no unrelated
+  file moves. If it needs a prerequisite change, that is a separate untagged commit first.
+- **A `(promotion)` commit must update §8.1** in the same commit, so the document and the
+  deployed state move together.
+- **The tag is reserved.** Do not use it decoratively, do not use it on a commit that "prepares
+  for" a promotion, and do not use it because a change feels important. It means exactly one
+  thing: what production submits is now different.
+
+A promotion commit body must state:
+
+1. Artifact identity — ablation, model type, alpha, feature count, calibration.
+2. What it replaces.
+3. The evidence, with partition labels, raw and submitted Delta R2 separately, `n`, and the
+   null expectation (§13).
+4. The operator who signed off.
+5. The state of the `promoted` flag and why (see §8.1 — it stays False absent a real holdout).
+6. Confirmation `check_production` ran after deploy, with its reported values.
+
+### 11.3 Staging discipline
+
+- **Never `git add .` or `git add -A`.** Stage explicit paths only — a blanket add is how
+  unrelated or unreviewed files (data dumps, stray gitlinks, scratch output) end up committed.
+  This matters more now that there is no branch or PR between staging and deployed state.
+- Run `git status` and read `git diff` (or `git diff --cached`) before every commit. Confirm
+  exactly what's staged matches what you intend.
+- Read git's warnings rather than letting them scroll past — a gitlink notice, a CRLF warning,
+  a "not tracking" message is often the only signal something is about to go in wrong.
 - Never commit API keys, `.env` files, Modal tokens, or downloaded evidence bundles.
 - Never commit large data files (`data/`, archives, evidence dumps).
-- Do not rewrite published history.
+- Especially careful with: `artifacts/v3_lite_candidate.json`, the calibration path, anything
+  under the webhook handler. A commit touching these is almost certainly a promotion — if you
+  are about to commit one of these without the `(promotion)` tag, stop and check why.
 - `scripts/sweep_v3_lite_official_candidates.py` is **read-only** by design. Keep it that way.
 
-### Commit messages
+### 11.4 Commit messages
 
-State what changed and what it does *not* change. Example:
+State what changed and what it does *not* change. The "does not change" line is not boilerplate
+— it is the assertion that this commit is not a promotion.
+
+Routine commit:
 
 ```
 Rank sweep candidates by raw Delta R2 instead of submitted
@@ -551,6 +648,28 @@ Q1 (-0.0020) and Q2 (-0.0042). Ranking on it selects for compatibility
 with a transform we have evidence against.
 
 Does not change the deployed artifact or calibration path.
+```
+
+Promotion commit:
+
+```
+Swap deployed artifact to fls_plus_reasoning, alpha=100 (promotion)
+
+Replaces: fls_plus_revenue / constrained_ridge / alpha=100 / 39 features
+With:     fls_plus_reasoning / constrained_ridge / alpha=100 / 41 features
+Calibration: unchanged (calibration_v1)
+
+Evidence: 2026Q1 (selection quarter — contaminated, see §1.2)
+  raw ΔR2 0.007188 / submitted ΔR2 0.006955, n=2390,
+  null expectation (1-0.29)/2387 = 0.00030
+  Ranked 3rd of 144 candidates on raw; top ten within noise.
+
+promoted remains False — no untouched holdout exists (§8.1).
+Operator sign-off: Zaid, 2026-08-28.
+check_production: v3_lite_operator_2026_08_28 / fls_plus_reasoning /
+  alpha 100.0 / 41 features — matches intended.
+
+§8.1 updated in this commit.
 ```
 
 ---
@@ -580,6 +699,9 @@ uv run python scripts/sweep_v3_lite_official_candidates.py
 # Prediction attribution
 uv run python scripts/inspect_v3_prediction.py
 uv run python scripts/render_prediction_dashboard.py
+
+# Promotion history — every time production changed
+git log --oneline --grep='(promotion)' --fixed-strings
 ```
 
 Log categories: `[LIVE_INPUT]` (what production received), `[V3_FEED]` (context coverage),
@@ -589,7 +711,7 @@ Log categories: `[LIVE_INPUT]` (what production received), `[V3_FEED]` (context 
 
 ## 13. Reporting standards
 
-Any result stated in a commit, comment, PR, or summary must include:
+Any result stated in a commit, comment, or summary must include:
 
 1. **Raw and submitted Delta R2 separately.** Never one number.
 2. **n**, and the null expectation `(1 - R2_benchmark)/(n - k)`.
@@ -604,7 +726,11 @@ Language discipline:
 - "Out-of-sample" — only if the evaluation window is disjoint from everything that touched the
   fit, including scalers and calibrators.
 - "Validated" / "promoted" — only if a genuine untouched holdout was used. Currently nothing is.
+  Note that a `(promotion)`-tagged commit does not make anything "validated"; it records a
+  deployment, not a passed gate (§10).
 - "The model uses X" — only if X is in the artifact's `feature_names`.
+- "Deployed" / "in production" — only if it landed in a `(promotion)` commit and
+  `check_production` confirmed it.
 
 Do not report an improvement without stating what it was measured against and what else moved.
 
@@ -614,7 +740,9 @@ Do not report an improvement without stating what it was measured against and wh
 
 Before proposing any change, answer:
 
-- [ ] Does this read 2026Q3 in any way? → **stop**
+- [ ] Does this use a 2026Q3 number to choose between specifications, hyperparameters, or
+      features (rather than just scoring already-frozen predictions against it)? → **stop**,
+      see §0.1 / §1.2
 - [ ] Does it fit anything on live events? → **stop**
 - [ ] Does it evaluate an artifact on data that touched its fit? → **stop**
 - [ ] Does it weaken the point-in-time audit? → **stop**
@@ -624,7 +752,13 @@ Before proposing any change, answer:
 - [ ] How many candidates were compared to find this?
 - [ ] Does it touch the live path? → latency, ingestion verification, always-submit guarantee
 - [ ] Does it change what `check_production` validates?
-- [ ] Do the 215 + 7 tests still pass?
+- [ ] **Does it change what production submits?** → it is a promotion: tag the subject line
+      `(promotion)`, update §8.1, include the §11.2 body fields, run `check_production` after.
+- [ ] **If it is not a promotion, does the commit message say so explicitly?**
+- [ ] Is this landing on `main` — and if a branch is being created instead, what is the stated
+      reason? → default is no branch (§11.1)
+- [ ] Is everything staged by explicit path, with `git diff --cached` read? → no `git add .`
+- [ ] Do the 226 tests still pass?
 
 When uncertain, produce the analysis and the caveat. **Do not resolve ambiguity in the direction
 that makes a result look better.** The purpose of this document is to prevent a system that
