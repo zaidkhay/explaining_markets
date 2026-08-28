@@ -1,0 +1,84 @@
+{
+  "claims": [],
+  "diagnostic_signal": {},
+  "event": {
+    "cutoff": "2026-08-21T12:00:00+00:00",
+    "event_id": "ea_BJ_Q2_2026",
+    "ticker": "BJ"
+  },
+  "external_context": {
+    "deployed_feature_count": 39,
+    "family_availability": {
+      "company_history": 0.0,
+      "company_news": 1.0,
+      "eps": 1.0,
+      "guidance": 0.0,
+      "guidance_consensus": 0.0,
+      "peer_news": 0.0,
+      "peers": 0.0,
+      "price_5y": 0.0,
+      "reasoning": 1.0,
+      "revenue": 0.0,
+      "sector_news": 0.0
+    },
+    "nonzero_deployed_features": 0,
+    "provider_errors": 0,
+    "provider_receipts": [
+      {
+        "count": 0,
+        "provider_call": "earnings.current",
+        "retrieved_at": "2026-08-21T14:00:51.979470+00:00",
+        "status": "ok"
+      },
+      {
+        "count": 0,
+        "provider_call": "guidance.current",
+        "retrieved_at": "2026-08-21T14:00:51.979487+00:00",
+        "status": "ok"
+      },
+      {
+        "count": 2,
+        "matched_fields": [
+          "eps",
+          "guidance_raised"
+        ],
+        "parser_version": "disclosure_results_v1",
+        "provider_call": "event_disclosure.results",
+        "retrieved_at": "2026-08-21T14:00:51.979875+00:00",
+        "status": "ok"
+      },
+      {
+        "count": 0,
+        "provider_call": "metadata",
+        "retrieved_at": "2026-08-21T14:00:51.979880+00:00",
+        "status": "ok"
+      },
+      {
+        "count": 0,
+        "provider_call": "peers",
+        "retrieved_at": "2026-08-21T14:00:51.979890+00:00",
+        "status": "ok"
+      },
+      {
+        "count": 22,
+        "provider_call": "news.company",
+        "retrieved_at": "2026-08-21T14:00:51.979905+00:00",
+        "status": "ok"
+      },
+      {
+        "count": 22,
+        "kind": "company_news",
+        "retrieved_at": "2026-08-21T14:00:51.979913+00:00",
+        "status": "ok"
+      }
+    ],
+    "provider_successes": 7
+  },
+  "realized": {
+    "car1": 0.05167076700042683,
+    "realized_percentile": 0.7507055503292568
+  },
+  "score": {
+    "submitted_percentile": 0.9460251046025104
+  }
+}

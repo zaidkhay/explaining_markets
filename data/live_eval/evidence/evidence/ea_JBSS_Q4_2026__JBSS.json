@@ -1,0 +1,359 @@
+{
+  "company_history_summary": {
+    "mean_prior_earnings_abnormal_return": 0.0,
+    "mean_prior_eps_surprise": 0.0,
+    "mean_prior_revenue_surprise": 0.0,
+    "prior_earnings_count": 0.0,
+    "similar_earnings_event_mean_reaction": 0.0,
+    "similar_eps_surprise_mean_reaction": 0.0,
+    "similar_event_count": 0.0,
+    "similar_revenue_surprise_mean_reaction": 0.0
+  },
+  "created_at": "2026-08-20T16:00:36.228433+00:00",
+  "cutoff": "2026-08-20T14:00:00+00:00",
+  "earnings": null,
+  "event_id": "ea_JBSS_Q4_2026",
+  "feature_availability": {
+    "company_history": 0.0,
+    "company_news": 1.0,
+    "eps": 0.0,
+    "guidance": 0.0,
+    "guidance_consensus": 0.0,
+    "peer_news": 0.0,
+    "peers": 0.0,
+    "price_5y": 0.0,
+    "reasoning": 1.0,
+    "revenue": 0.0,
+    "sector_news": 0.0
+  },
+  "feature_spec_version": "v3.2-disclosure-results",
+  "guidance": null,
+  "model_version": "v3_lite_operator_2026_08_19",
+  "peer_summary": {
+    "peer_abnormal_return_1d": 0.0,
+    "peer_dispersion_1d": 0.0,
+    "peer_dispersion_5d": 0.0,
+    "peer_material_news_flag": 0.0,
+    "peer_mean_return_1d": 0.0,
+    "peer_mean_return_20d": 0.0,
+    "peer_mean_return_5d": 0.0,
+    "peer_negative_news_score": 0.0,
+    "peer_news_count_24h": 0.0,
+    "peer_positive_news_score": 0.0,
+    "recent_peer_earnings_count": 0.0,
+    "recent_peer_eps_surprise_mean": 0.0,
+    "recent_peer_guidance_signal_mean": 0.0,
+    "recent_peer_post_earnings_abnormal_return_mean": 0.0,
+    "recent_peer_revenue_surprise_mean": 0.0
+  },
+  "prediction": 0.28451882845188287,
+  "price_context": {
+    "distance_from_20d_high": 0.0,
+    "distance_from_20d_low": 0.0,
+    "distance_from_52w_high": 0.0,
+    "distance_from_52w_low": 0.0,
+    "realized_volatility_20d": 0.0,
+    "realized_volatility_252d": 0.0,
+    "realized_volatility_60d": 0.0,
+    "return_120d": 0.0,
+    "return_1d_pre_event": 0.0,
+    "return_20d": 0.0,
+    "return_252d": 0.0,
+    "return_3y": 0.0,
+    "return_5d": 0.0,
+    "return_5y": 0.0,
+    "return_60d": 0.0
+  },
+  "provider_receipts": [
+    {
+      "count": 0,
+      "provider_call": "earnings.current",
+      "retrieved_at": "2026-08-20T16:00:35.888321+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "guidance.current",
+      "retrieved_at": "2026-08-20T16:00:35.888346+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "matched_fields": [],
+      "parser_version": "disclosure_results_v1",
+      "provider_call": "event_disclosure.results",
+      "retrieved_at": "2026-08-20T16:00:35.888913+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "metadata",
+      "retrieved_at": "2026-08-20T16:00:35.888921+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "peers",
+      "retrieved_at": "2026-08-20T16:00:35.888931+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 11,
+      "provider_call": "news.company",
+      "retrieved_at": "2026-08-20T16:00:35.888945+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 11,
+      "kind": "company_news",
+      "retrieved_at": "2026-08-20T16:00:35.888950+00:00",
+      "status": "ok"
+    }
+  ],
+  "reasoning": {
+    "company_news_signal": 0.1668988845015965,
+    "concise_rationale": "EPS=+0.00, revenue=+0.00, guidance=+0.00; priced-in=-0.00, company-news=+0.17, peers=+0.00, sector=+0.00, contradiction=0.00.",
+    "confidence": 0.45544114,
+    "contradiction_score": 0.0,
+    "cutoff": "2026-08-20T14:00:00+00:00",
+    "earnings_quality": 0.0,
+    "expectations_gap": 0.0,
+    "guidance_quality": 0.0,
+    "historical_analogy_signal": 0.0,
+    "materiality": 0.1668988845015965,
+    "overall_event_signal": 0.016689888450159653,
+    "peer_signal": 0.0,
+    "priced_in_score": -0.0,
+    "revenue_quality": 0.0,
+    "sector_signal": 0.0,
+    "source_ids": [
+      "a72e0978ebaa366055c85edd",
+      "98ba1c099efa1d98d000b03f",
+      "db919973b6c8953e83aa2502",
+      "9306fdf57a41433ec9191e8b",
+      "3556154260781afbc19f705c",
+      "fbec0ebe2b69e1dfe4d7efb2",
+      "a310d18aa781b66a3fb292eb",
+      "6965d6e2a8ed96534083706f",
+      "6b01995b64efcef09977879b",
+      "21122d4510a976735937627c"
+    ]
+  },
+  "selected_company_news": [
+    {
+      "available_at": "2026-08-19T22:11:16+00:00",
+      "concise_rationale": "M&A: Sanfilippo (JBSS) CFO earns 159% performance share award",
+      "confidence": 0.95,
+      "entities": [
+        "JBSS"
+      ],
+      "expected_direction": 0.1685536125,
+      "headline": "Sanfilippo (JBSS) CFO earns 159% performance share award",
+      "materiality": 0.78,
+      "novelty": 1.0,
+      "published_at": "2026-08-19T22:11:16+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.22473815,
+      "source": "Stock Titan",
+      "source_id": "a72e0978ebaa366055c85edd",
+      "source_quality": 0.95,
+      "topic": "M&A",
+      "url": "https://www.stocktitan.net/sec-filings/JBSS/form-4-sanfilippo-john-b-son-inc-insider-trading-activity-02dcb7d18cdf.html"
+    },
+    {
+      "available_at": "2026-08-19T19:40:33+00:00",
+      "concise_rationale": "management_change: John B. Sanfilippo & Son, Inc. Reports Fiscal 2026 Fourth Quarter and Full Year Results",
+      "confidence": 0.95,
+      "entities": [
+        "JBSS"
+      ],
+      "expected_direction": 0.35772215,
+      "headline": "John B. Sanfilippo & Son, Inc. Reports Fiscal 2026 Fourth Quarter and Full Year Results",
+      "materiality": 0.78,
+      "novelty": 0.6,
+      "published_at": "2026-08-19T19:40:33+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.3102962,
+      "source": "Business Wire",
+      "source_id": "98ba1c099efa1d98d000b03f",
+      "source_quality": 0.95,
+      "topic": "management_change",
+      "url": "https://www.businesswire.com/news/home/20260819284169/en/John-B.-Sanfilippo-Son-Inc.-Reports-Fiscal-2026-Fourth-Quarter-and-Full-Year-Results"
+    },
+    {
+      "available_at": "2026-08-19T20:11:16+00:00",
+      "concise_rationale": "management_change: Earnings Flash (JBSS) John B. Sanfilippo & Son, Inc. Reports Q4 Revenue $280.4M, vs. FactSet Est of $274.9M",
+      "confidence": 0.88,
+      "entities": [
+        "JBSS"
+      ],
+      "expected_direction": 0.020175675,
+      "headline": "Earnings Flash (JBSS) John B. Sanfilippo & Son, Inc. Reports Q4 Revenue $280.4M, vs. FactSet Est of $274.9M",
+      "materiality": 1.0,
+      "novelty": 0.6739130434782609,
+      "published_at": "2026-08-19T20:11:16+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.026900900000000002,
+      "source": "marketscreener.com",
+      "source_id": "db919973b6c8953e83aa2502",
+      "source_quality": 0.6,
+      "topic": "management_change",
+      "url": "https://www.marketscreener.com/news/earnings-flash-jbss-john-b-sanfilippo-son-inc-reports-q4-revenue-280-4m-vs-factset-est-of-ce7859d2dc81f722"
+    },
+    {
+      "available_at": "2026-08-19T20:18:00+00:00",
+      "concise_rationale": "other: John B. Sanfilippo: Fiscal Q4 Earnings Snapshot",
+      "confidence": 0.871,
+      "entities": [
+        "JBSS"
+      ],
+      "expected_direction": 0.2022579,
+      "headline": "John B. Sanfilippo: Fiscal Q4 Earnings Snapshot",
+      "materiality": 0.94,
+      "novelty": 0.6165413533834587,
+      "published_at": "2026-08-19T20:18:00+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.2696772,
+      "source": "10TV",
+      "source_id": "9306fdf57a41433ec9191e8b",
+      "source_quality": 0.6,
+      "topic": "other",
+      "url": "https://www.10tv.com/article/syndication/associatedpress/john-b-sanfilippo-fiscal-q4-earnings-snapshot/616-b539d789-bddc-45cc-8a01-1b7cb64dfa1d"
+    },
+    {
+      "available_at": "2026-08-19T20:40:33+00:00",
+      "concise_rationale": "analyst_action: John B. Sanfilippo & Son (NASDAQ:JBSS) Posts Quarterly Earnings Results, Misses Expectations By $0.46 EPS",
+      "confidence": 0.871,
+      "entities": [
+        "JBSS"
+      ],
+      "expected_direction": -0.1065358125,
+      "headline": "John B. Sanfilippo & Son (NASDAQ:JBSS) Posts Quarterly Earnings Results, Misses Expectations By $0.46 EPS",
+      "materiality": 0.94,
+      "novelty": 0.6125827814569537,
+      "published_at": "2026-08-19T20:40:33+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": -0.14204775,
+      "source": "MarketBeat",
+      "source_id": "3556154260781afbc19f705c",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://www.marketbeat.com/instant-alerts/john-b-sanfilippo-son-nasdaqjbss-posts-quarterly-earnings-results-misses-expectations-by-046-eps-2026-08-19/"
+    },
+    {
+      "available_at": "2026-08-19T20:40:33+00:00",
+      "concise_rationale": "other: John B. Sanfilippo announces mixed Q4 results as \u2019multiple challenges\u2019 impact profitability",
+      "confidence": 0.8370000000000001,
+      "entities": [
+        "JBSS"
+      ],
+      "expected_direction": 0.023720287500000003,
+      "headline": "John B. Sanfilippo announces mixed Q4 results as \u2019multiple challenges\u2019 impact profitability",
+      "materiality": 0.94,
+      "novelty": 0.6693548387096775,
+      "published_at": "2026-08-19T20:40:33+00:00",
+      "relation": "company",
+      "relevance": 0.83,
+      "sentiment": 0.031627050000000004,
+      "source": "Investing.com South Africa",
+      "source_id": "fbec0ebe2b69e1dfe4d7efb2",
+      "source_quality": 0.6,
+      "topic": "other",
+      "url": "https://m.za.investing.com/news/stock-market-news/john-b-sanfilippo-announces-mixed-q4-results-as-multiple-challenges-impact-profitability-93CH-4436371?ampMode=1"
+    },
+    {
+      "available_at": "2026-08-19T20:40:33+00:00",
+      "concise_rationale": "management_change: JBSS Fourth-Quarter Sales Rise 4.2% as Diluted EPS Falls to $0.71",
+      "confidence": 0.8130000000000001,
+      "entities": [
+        "JBSS"
+      ],
+      "expected_direction": 0.023165025,
+      "headline": "JBSS Fourth-Quarter Sales Rise 4.2% as Diluted EPS Falls to $0.71",
+      "materiality": 0.78,
+      "novelty": 0.7413793103448276,
+      "published_at": "2026-08-19T20:40:33+00:00",
+      "relation": "company",
+      "relevance": 0.83,
+      "sentiment": 0.0308867,
+      "source": "Quiver Quantitative",
+      "source_id": "a310d18aa781b66a3fb292eb",
+      "source_quality": 0.6,
+      "topic": "management_change",
+      "url": "https://www.quiverquant.com/news/JBSS+Fourth-Quarter+Sales+Rise+4.2%25+as+Diluted+EPS+Falls+to+%240.71"
+    },
+    {
+      "available_at": "2026-08-19T21:40:33+00:00",
+      "concise_rationale": "other: Sanfilippo (NASDAQ: JBSS) SVP earns 159% PSU share award",
+      "confidence": 0.88,
+      "entities": [
+        "JBSS"
+      ],
+      "expected_direction": 0.060545550000000004,
+      "headline": "Sanfilippo (NASDAQ: JBSS) SVP earns 159% PSU share award",
+      "materiality": 0.3,
+      "novelty": 0.4285714285714286,
+      "published_at": "2026-08-19T21:40:33+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.0807274,
+      "source": "Stock Titan",
+      "source_id": "6965d6e2a8ed96534083706f",
+      "source_quality": 0.95,
+      "topic": "other",
+      "url": "https://www.stocktitan.net/sec-filings/JBSS/form-4-sanfilippo-john-b-son-inc-insider-trading-activity-a64110bb82bc.html"
+    },
+    {
+      "available_at": "2026-08-19T21:40:33+00:00",
+      "concise_rationale": "customer_win: Sanfilippo (NASDAQ: JBSS) controller earns 159% PSU award",
+      "confidence": 0.88,
+      "entities": [
+        "JBSS"
+      ],
+      "expected_direction": 0.613132675,
+      "headline": "Sanfilippo (NASDAQ: JBSS) controller earns 159% PSU award",
+      "materiality": 0.3,
+      "novelty": 0.3857142857142857,
+      "published_at": "2026-08-19T21:40:33+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.4841769,
+      "source": "Stock Titan",
+      "source_id": "6b01995b64efcef09977879b",
+      "source_quality": 0.95,
+      "topic": "customer_win",
+      "url": "https://www.stocktitan.net/sec-filings/JBSS/form-4-sanfilippo-john-b-son-inc-insider-trading-activity-17a136bc1180.html"
+    },
+    {
+      "available_at": "2026-08-14T10:14:08+00:00",
+      "concise_rationale": "other: Be Sure To Check Out John B. Sanfilippo & Son, Inc. (NASDAQ:JBSS) Before It Goes Ex-Dividend",
+      "confidence": 0.840057,
+      "entities": [
+        "JBSS",
+        "MDLZ",
+        "GIS"
+      ],
+      "expected_direction": 0.5792889625,
+      "headline": "Be Sure To Check Out John B. Sanfilippo & Son, Inc. (NASDAQ:JBSS) Before It Goes Ex-Dividend",
+      "materiality": 0.78,
+      "novelty": 0.6229508196721312,
+      "published_at": "2026-08-14T10:14:08+00:00",
+      "relation": "company",
+      "relevance": 0.965285,
+      "sentiment": 0.43905194999999997,
+      "source": "Simply Wall Street",
+      "source_id": "21122d4510a976735937627c",
+      "source_quality": 0.6,
+      "topic": "other",
+      "url": "https://simplywall.st/stocks/us/food-beverage-tobacco/nasdaq-jbss/john-b-sanfilippo-son/news/be-sure-to-check-out-john-b-sanfilippo-son-inc-nasdaqjbss-be"
+    }
+  ],
+  "selected_peer_news": [],
+  "selected_sector_news": [],
+  "ticker": "JBSS"
+}

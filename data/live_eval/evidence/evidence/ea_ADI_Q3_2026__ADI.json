@@ -1,0 +1,363 @@
+{
+  "company_history_summary": {
+    "mean_prior_earnings_abnormal_return": 0.0,
+    "mean_prior_eps_surprise": 0.0,
+    "mean_prior_revenue_surprise": 0.0,
+    "prior_earnings_count": 0.0,
+    "similar_earnings_event_mean_reaction": 0.0,
+    "similar_eps_surprise_mean_reaction": 0.0,
+    "similar_event_count": 0.0,
+    "similar_revenue_surprise_mean_reaction": 0.0
+  },
+  "created_at": "2026-08-19T16:00:41.964896+00:00",
+  "cutoff": "2026-08-19T14:00:00+00:00",
+  "earnings": null,
+  "event_id": "ea_ADI_Q3_2026",
+  "feature_availability": {
+    "company_history": 0.0,
+    "company_news": 1.0,
+    "eps": 0.0,
+    "guidance": 0.0,
+    "guidance_consensus": 0.0,
+    "peer_news": 0.0,
+    "peers": 0.0,
+    "price_5y": 0.0,
+    "reasoning": 1.0,
+    "revenue": 0.0,
+    "sector_news": 0.0
+  },
+  "feature_spec_version": "v3.2-disclosure-results",
+  "guidance": null,
+  "model_version": "v3_lite_operator_2026_08_19",
+  "peer_summary": {
+    "peer_abnormal_return_1d": 0.0,
+    "peer_dispersion_1d": 0.0,
+    "peer_dispersion_5d": 0.0,
+    "peer_material_news_flag": 0.0,
+    "peer_mean_return_1d": 0.0,
+    "peer_mean_return_20d": 0.0,
+    "peer_mean_return_5d": 0.0,
+    "peer_negative_news_score": 0.0,
+    "peer_news_count_24h": 0.0,
+    "peer_positive_news_score": 0.0,
+    "recent_peer_earnings_count": 0.0,
+    "recent_peer_eps_surprise_mean": 0.0,
+    "recent_peer_guidance_signal_mean": 0.0,
+    "recent_peer_post_earnings_abnormal_return_mean": 0.0,
+    "recent_peer_revenue_surprise_mean": 0.0
+  },
+  "prediction": 0.704602510460251,
+  "price_context": {
+    "distance_from_20d_high": 0.0,
+    "distance_from_20d_low": 0.0,
+    "distance_from_52w_high": 0.0,
+    "distance_from_52w_low": 0.0,
+    "realized_volatility_20d": 0.0,
+    "realized_volatility_252d": 0.0,
+    "realized_volatility_60d": 0.0,
+    "return_120d": 0.0,
+    "return_1d_pre_event": 0.0,
+    "return_20d": 0.0,
+    "return_252d": 0.0,
+    "return_3y": 0.0,
+    "return_5d": 0.0,
+    "return_5y": 0.0,
+    "return_60d": 0.0
+  },
+  "provider_receipts": [
+    {
+      "count": 0,
+      "provider_call": "earnings.current",
+      "retrieved_at": "2026-08-19T16:00:41.458687+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "guidance.current",
+      "retrieved_at": "2026-08-19T16:00:41.458718+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "matched_fields": [],
+      "parser_version": "disclosure_results_v1",
+      "provider_call": "event_disclosure.results",
+      "retrieved_at": "2026-08-19T16:00:41.458781+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "metadata",
+      "retrieved_at": "2026-08-19T16:00:41.458786+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "peers",
+      "retrieved_at": "2026-08-19T16:00:41.458796+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 50,
+      "provider_call": "news.company",
+      "retrieved_at": "2026-08-19T16:00:41.458811+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 50,
+      "kind": "company_news",
+      "retrieved_at": "2026-08-19T16:00:41.458818+00:00",
+      "status": "ok"
+    }
+  ],
+  "reasoning": {
+    "company_news_signal": 0.688760252737281,
+    "concise_rationale": "EPS=+0.00, revenue=+0.00, guidance=+0.00; priced-in=-0.00, company-news=+0.69, peers=+0.00, sector=+0.00, contradiction=0.00.",
+    "confidence": 0.45758000000000004,
+    "contradiction_score": 0.0,
+    "cutoff": "2026-08-19T14:00:00+00:00",
+    "earnings_quality": 0.0,
+    "expectations_gap": 0.0,
+    "guidance_quality": 0.0,
+    "historical_analogy_signal": 0.0,
+    "materiality": 0.688760252737281,
+    "overall_event_signal": 0.0688760252737281,
+    "peer_signal": 0.0,
+    "priced_in_score": -0.0,
+    "revenue_quality": 0.0,
+    "sector_signal": 0.0,
+    "source_ids": [
+      "52c61f2ed2b495aecdccaa52",
+      "f3cf71271b0334191660f0f3",
+      "112d12fa5d67e83a036355ae",
+      "e612955386ea85bc2abbdf8b",
+      "140fdd354a134db0126b6cd2",
+      "1c0481fbda2ed499cbac1a1e",
+      "aa988e9e412117a7214ff010",
+      "a7203bd35f6d78d872eee542",
+      "768a3a215ba25a1fd27eb59f",
+      "29037f97d242c6c9427f690c"
+    ]
+  },
+  "selected_company_news": [
+    {
+      "available_at": "2026-08-19T12:51:03+00:00",
+      "concise_rationale": "guidance: Analog Devices (NASDAQ:ADI) Q2 Sales Beat Estimates, Inventory Levels Improve",
+      "confidence": 0.88,
+      "entities": [
+        "ADI"
+      ],
+      "expected_direction": 0.807456025,
+      "headline": "Analog Devices (NASDAQ:ADI) Q2 Sales Beat Estimates, Inventory Levels Improve",
+      "materiality": 1.0,
+      "novelty": 1.0,
+      "published_at": "2026-08-19T12:51:03+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.7432747,
+      "source": "StockStory",
+      "source_id": "52c61f2ed2b495aecdccaa52",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://stockstory.org/us/stocks/nasdaq/adi/news/earnings/analog-devices-nasdaqadi-q2-sales-beat-estimates-inventory-levels-improve"
+    },
+    {
+      "available_at": "2026-08-19T10:36:59+00:00",
+      "concise_rationale": "pricing: Analog Devices (NASDAQ: ADI) posts 40% sales jump, 163% EPS gain",
+      "confidence": 0.95,
+      "entities": [
+        "ADI"
+      ],
+      "expected_direction": 0.855884275,
+      "headline": "Analog Devices (NASDAQ: ADI) posts 40% sales jump, 163% EPS gain",
+      "materiality": 1.0,
+      "novelty": 0.5909090909090909,
+      "published_at": "2026-08-19T10:36:59+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.8078456999999999,
+      "source": "Stock Titan",
+      "source_id": "f3cf71271b0334191660f0f3",
+      "source_quality": 0.95,
+      "topic": "pricing",
+      "url": "https://www.stocktitan.net/sec-filings/ADI/10-q-analog-devices-inc-quarterly-earnings-report-9f06b6f70449.html"
+    },
+    {
+      "available_at": "2026-08-19T11:53:57+00:00",
+      "concise_rationale": "guidance: Analog Devices Profit, Revenue Up on Surging AI Data Center Demand",
+      "confidence": 0.95,
+      "entities": [
+        "ADI",
+        "AMD",
+        "NVDA",
+        "INTC",
+        "AMAT"
+      ],
+      "expected_direction": 0.650057875,
+      "headline": "Analog Devices Profit, Revenue Up on Surging AI Data Center Demand",
+      "materiality": 1.0,
+      "novelty": 0.48809523809523814,
+      "published_at": "2026-08-19T11:53:57+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.5334105,
+      "source": "WSJ",
+      "source_id": "112d12fa5d67e83a036355ae",
+      "source_quality": 0.85,
+      "topic": "guidance",
+      "url": "https://www.wsj.com/business/earnings/analog-devices-profit-revenue-up-on-surging-ai-data-center-demand-47c508fe"
+    },
+    {
+      "available_at": "2026-08-19T11:36:57+00:00",
+      "concise_rationale": "demand: Analog Devices Inc 2026: Revenue $4.02B, EPS $2.74\u2014 10-Q Summary",
+      "confidence": 0.88,
+      "entities": [
+        "ADI"
+      ],
+      "expected_direction": 0.7351080999999999,
+      "headline": "Analog Devices Inc 2026: Revenue $4.02B, EPS $2.74\u2014 10-Q Summary",
+      "materiality": 1.0,
+      "novelty": 0.625,
+      "published_at": "2026-08-19T11:36:57+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.6468107999999999,
+      "source": "TradingView",
+      "source_id": "e612955386ea85bc2abbdf8b",
+      "source_quality": 0.6,
+      "topic": "demand",
+      "url": "https://www.tradingview.com/news/tradingview:6b5ff89e9c436:0-analog-devices-inc-2026-revenue-4-02b-eps-2-74-10-q-summary/"
+    },
+    {
+      "available_at": "2026-08-19T11:13:03+00:00",
+      "concise_rationale": "guidance: Analog Devices Q3 2026: AI demand drives record revenue outlook",
+      "confidence": 0.88,
+      "entities": [
+        "ADI"
+      ],
+      "expected_direction": 0.717210025,
+      "headline": "Analog Devices Q3 2026: AI demand drives record revenue outlook",
+      "materiality": 1.0,
+      "novelty": 0.6097560975609756,
+      "published_at": "2026-08-19T11:13:03+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.6229467,
+      "source": "24/7 Wall St.",
+      "source_id": "140fdd354a134db0126b6cd2",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://247wallst.com/cards/analog-devices-q3-2026-earnings-adi-01m0cvad19e9t48wv22f30wwr9"
+    },
+    {
+      "available_at": "2026-08-19T12:29:03+00:00",
+      "concise_rationale": "guidance: Analog Devices Q3 2026 earnings beat on AI data center demand",
+      "confidence": 0.88,
+      "entities": [
+        "ADI"
+      ],
+      "expected_direction": 0.8622432250000001,
+      "headline": "Analog Devices Q3 2026 earnings beat on AI data center demand",
+      "materiality": 1.0,
+      "novelty": 0.5888888888888889,
+      "published_at": "2026-08-19T12:29:03+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.8163243,
+      "source": "Quartz",
+      "source_id": "1c0481fbda2ed499cbac1a1e",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://qz.com/analog-devices-earnings-record-revenue-ai-data-center-081926"
+    },
+    {
+      "available_at": "2026-08-19T10:27:59+00:00",
+      "concise_rationale": "guidance: Meeder Advisory Services Inc. Invests $6.16 Million in Analog Devices, Inc. $ADI",
+      "confidence": 0.8370000000000001,
+      "entities": [
+        "ADI"
+      ],
+      "expected_direction": 0.5324148625,
+      "headline": "Meeder Advisory Services Inc. Invests $6.16 Million in Analog Devices, Inc. $ADI",
+      "materiality": 0.94,
+      "novelty": 0.7744360902255639,
+      "published_at": "2026-08-19T10:27:59+00:00",
+      "relation": "company",
+      "relevance": 0.83,
+      "sentiment": 0.37655315,
+      "source": "MarketBeat",
+      "source_id": "aa988e9e412117a7214ff010",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://www.marketbeat.com/instant-alerts/filing-meeder-advisory-services-inc-invests-616-million-in-analog-devices-inc-adi-2026-08-19/"
+    },
+    {
+      "available_at": "2026-08-19T11:34:57+00:00",
+      "concise_rationale": "guidance: Analog Devices rises after Q3 results, outlook beat estimates",
+      "confidence": 0.871,
+      "entities": [
+        "ADI"
+      ],
+      "expected_direction": 0.7789996749999999,
+      "headline": "Analog Devices rises after Q3 results, outlook beat estimates",
+      "materiality": 0.94,
+      "novelty": 0.6194029850746269,
+      "published_at": "2026-08-19T11:34:57+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.7053328999999999,
+      "source": "Seeking Alpha",
+      "source_id": "a7203bd35f6d78d872eee542",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://seekingalpha.com/news/4634831-analog-devices-rises-after-q3-results-outlook-beat-estimates"
+    },
+    {
+      "available_at": "2026-08-18T14:09:36+00:00",
+      "concise_rationale": "guidance: TXN's Automotive Recovery Gains Pace: Can It Lift 2026 Growth Further?",
+      "confidence": 0.88,
+      "entities": [
+        "TXN",
+        "ADI",
+        "ON"
+      ],
+      "expected_direction": 0.714540475,
+      "headline": "TXN's Automotive Recovery Gains Pace: Can It Lift 2026 Growth Further?",
+      "materiality": 1.0,
+      "novelty": 0.7410071942446044,
+      "published_at": "2026-08-18T14:09:36+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.6193873,
+      "source": "The Globe and Mail",
+      "source_id": "768a3a215ba25a1fd27eb59f",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://www.theglobeandmail.com/investing/markets/stocks/ON/pressreleases/3907754/txns-automotive-recovery-gains-pace-can-it-lift-2026-growth-further/"
+    },
+    {
+      "available_at": "2026-08-19T08:31:00+00:00",
+      "concise_rationale": "guidance: Compass Wealth Management LLC Takes Position in Analog Devices, Inc. $ADI",
+      "confidence": 0.871,
+      "entities": [
+        "ADI"
+      ],
+      "expected_direction": 0.15206831250000002,
+      "headline": "Compass Wealth Management LLC Takes Position in Analog Devices, Inc. $ADI",
+      "materiality": 0.94,
+      "novelty": 0.5844594594594594,
+      "published_at": "2026-08-19T08:31:00+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.20275775000000001,
+      "source": "MarketBeat",
+      "source_id": "29037f97d242c6c9427f690c",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://www.marketbeat.com/instant-alerts/filing-compass-wealth-management-llc-takes-position-in-analog-devices-inc-adi-2026-08-19/"
+    }
+  ],
+  "selected_peer_news": [],
+  "selected_sector_news": [],
+  "ticker": "ADI"
+}

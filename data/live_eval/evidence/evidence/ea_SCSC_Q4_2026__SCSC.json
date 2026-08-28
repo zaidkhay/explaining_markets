@@ -1,0 +1,358 @@
+{
+  "company_history_summary": {
+    "mean_prior_earnings_abnormal_return": 0.0,
+    "mean_prior_eps_surprise": 0.0,
+    "mean_prior_revenue_surprise": 0.0,
+    "prior_earnings_count": 0.0,
+    "similar_earnings_event_mean_reaction": 0.0,
+    "similar_eps_surprise_mean_reaction": 0.0,
+    "similar_event_count": 0.0,
+    "similar_revenue_surprise_mean_reaction": 0.0
+  },
+  "created_at": "2026-08-20T16:00:51.445857+00:00",
+  "cutoff": "2026-08-20T14:30:00+00:00",
+  "earnings": null,
+  "event_id": "ea_SCSC_Q4_2026",
+  "feature_availability": {
+    "company_history": 0.0,
+    "company_news": 1.0,
+    "eps": 0.0,
+    "guidance": 0.0,
+    "guidance_consensus": 0.0,
+    "peer_news": 0.0,
+    "peers": 0.0,
+    "price_5y": 0.0,
+    "reasoning": 1.0,
+    "revenue": 0.0,
+    "sector_news": 0.0
+  },
+  "feature_spec_version": "v3.2-disclosure-results",
+  "guidance": null,
+  "model_version": "v3_lite_operator_2026_08_19",
+  "peer_summary": {
+    "peer_abnormal_return_1d": 0.0,
+    "peer_dispersion_1d": 0.0,
+    "peer_dispersion_5d": 0.0,
+    "peer_material_news_flag": 0.0,
+    "peer_mean_return_1d": 0.0,
+    "peer_mean_return_20d": 0.0,
+    "peer_mean_return_5d": 0.0,
+    "peer_negative_news_score": 0.0,
+    "peer_news_count_24h": 0.0,
+    "peer_positive_news_score": 0.0,
+    "recent_peer_earnings_count": 0.0,
+    "recent_peer_eps_surprise_mean": 0.0,
+    "recent_peer_guidance_signal_mean": 0.0,
+    "recent_peer_post_earnings_abnormal_return_mean": 0.0,
+    "recent_peer_revenue_surprise_mean": 0.0
+  },
+  "prediction": 0.25732217573221755,
+  "price_context": {
+    "distance_from_20d_high": 0.0,
+    "distance_from_20d_low": 0.0,
+    "distance_from_52w_high": 0.0,
+    "distance_from_52w_low": 0.0,
+    "realized_volatility_20d": 0.0,
+    "realized_volatility_252d": 0.0,
+    "realized_volatility_60d": 0.0,
+    "return_120d": 0.0,
+    "return_1d_pre_event": 0.0,
+    "return_20d": 0.0,
+    "return_252d": 0.0,
+    "return_3y": 0.0,
+    "return_5d": 0.0,
+    "return_5y": 0.0,
+    "return_60d": 0.0
+  },
+  "provider_receipts": [
+    {
+      "count": 0,
+      "provider_call": "earnings.current",
+      "retrieved_at": "2026-08-20T16:00:51.172014+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "guidance.current",
+      "retrieved_at": "2026-08-20T16:00:51.172030+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "matched_fields": [],
+      "parser_version": "disclosure_results_v1",
+      "provider_call": "event_disclosure.results",
+      "retrieved_at": "2026-08-20T16:00:51.172449+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "metadata",
+      "retrieved_at": "2026-08-20T16:00:51.172453+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "peers",
+      "retrieved_at": "2026-08-20T16:00:51.172461+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 18,
+      "provider_call": "news.company",
+      "retrieved_at": "2026-08-20T16:00:51.172475+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 18,
+      "kind": "company_news",
+      "retrieved_at": "2026-08-20T16:00:51.172482+00:00",
+      "status": "ok"
+    }
+  ],
+  "reasoning": {
+    "company_news_signal": -0.08759362581820172,
+    "concise_rationale": "EPS=+0.00, revenue=+0.00, guidance=+0.00; priced-in=-0.00, company-news=-0.09, peers=+0.00, sector=+0.00, contradiction=0.00.",
+    "confidence": 0.44332000000000005,
+    "contradiction_score": 0.0,
+    "cutoff": "2026-08-20T14:30:00+00:00",
+    "earnings_quality": 0.0,
+    "expectations_gap": 0.0,
+    "guidance_quality": 0.0,
+    "historical_analogy_signal": 0.0,
+    "materiality": 0.08759362581820172,
+    "overall_event_signal": -0.008759362581820173,
+    "peer_signal": 0.0,
+    "priced_in_score": -0.0,
+    "revenue_quality": 0.0,
+    "sector_signal": 0.0,
+    "source_ids": [
+      "75e136c93b3bcac1a7d09676",
+      "cfb55c2d08931b9196eddfa8",
+      "03631f07995372b88f8325f4",
+      "a5b3e3b433d6f18778a28c6f",
+      "97c45bd5b3b9200374425581",
+      "49ece73d71f17e721f227d7f",
+      "4ae11202f5c32469b267ad87",
+      "ea0cca35c98b5c7af6303187",
+      "0cbbf937e5204b803b4efc5c",
+      "3b0724bb206040f0644dbc38"
+    ]
+  },
+  "selected_company_news": [
+    {
+      "available_at": "2026-08-19T13:12:09+00:00",
+      "concise_rationale": "product_launch: ScanSource faces earnings test after strong rally, downgrade",
+      "confidence": 0.8460000000000001,
+      "entities": [
+        "SCSC"
+      ],
+      "expected_direction": 0.25687594999999996,
+      "headline": "ScanSource faces earnings test after strong rally, downgrade",
+      "materiality": 1.0,
+      "novelty": 1.0,
+      "published_at": "2026-08-19T13:12:09+00:00",
+      "relation": "company",
+      "relevance": 0.83,
+      "sentiment": 0.17583459999999998,
+      "source": "Investing.com",
+      "source_id": "75e136c93b3bcac1a7d09676",
+      "source_quality": 0.6,
+      "topic": "product_launch",
+      "url": "https://m.investing.com/news/earnings/scansource-faces-earnings-test-after-strong-rally-downgrade-93CH-4867645?ampMode=1"
+    },
+    {
+      "available_at": "2026-08-17T15:40:08+00:00",
+      "concise_rationale": "guidance: ScanSource (SCSC) Q4 2026 Preview: EPS Est. $1.14, Reports August 20",
+      "confidence": 0.88,
+      "entities": [
+        "SCSC"
+      ],
+      "expected_direction": -0.131329575,
+      "headline": "ScanSource (SCSC) Q4 2026 Preview: EPS Est. $1.14, Reports August 20",
+      "materiality": 1.0,
+      "novelty": 0.677570093457944,
+      "published_at": "2026-08-17T15:40:08+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": -0.17510610000000001,
+      "source": "AlphaStreet",
+      "source_id": "cfb55c2d08931b9196eddfa8",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://news.alphastreet.com/scansource-scsc-q4-2026-preview-eps-est-1-14-reports-august-20/amp/"
+    },
+    {
+      "available_at": "2026-08-17T14:41:46+00:00",
+      "concise_rationale": "guidance: ScanSource Announces Retirement of Peter Browning from Board of Directors",
+      "confidence": 0.847,
+      "entities": [
+        "SCSC"
+      ],
+      "expected_direction": 0.049211175,
+      "headline": "ScanSource Announces Retirement of Peter Browning from Board of Directors",
+      "materiality": 0.78,
+      "novelty": 0.6125827814569537,
+      "published_at": "2026-08-17T14:41:46+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.0656149,
+      "source": "01net",
+      "source_id": "03631f07995372b88f8325f4",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://www.01net.it/scansource-announces-retirement-of-peter-browning-from-board-of-directors/"
+    },
+    {
+      "available_at": "2026-08-18T11:10:48+00:00",
+      "concise_rationale": "M&A: Meeder Asset Management Inc. Acquires Shares of 93,287 ScanSource, Inc. $SCSC",
+      "confidence": 0.7989999999999999,
+      "entities": [
+        "SCSC"
+      ],
+      "expected_direction": 0.0128851125,
+      "headline": "Meeder Asset Management Inc. Acquires Shares of 93,287 ScanSource, Inc. $SCSC",
+      "materiality": 0.45999999999999996,
+      "novelty": 0.705521472392638,
+      "published_at": "2026-08-18T11:10:48+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.01718015,
+      "source": "MarketBeat",
+      "source_id": "a5b3e3b433d6f18778a28c6f",
+      "source_quality": 0.6,
+      "topic": "M&A",
+      "url": "https://www.marketbeat.com/instant-alerts/filing-meeder-asset-management-inc-acquires-shares-of-93287-scansource-inc-scsc-2026-08-18/"
+    },
+    {
+      "available_at": "2026-08-18T11:10:47+00:00",
+      "concise_rationale": "analyst_action: Pzena Investment Management LLC Makes New $57.81 Million Investment in ScanSource, Inc. $SCSC",
+      "confidence": 0.7989999999999999,
+      "entities": [
+        "SCSC"
+      ],
+      "expected_direction": 0.051670612500000004,
+      "headline": "Pzena Investment Management LLC Makes New $57.81 Million Investment in ScanSource, Inc. $SCSC",
+      "materiality": 0.45999999999999996,
+      "novelty": 0.5925925925925926,
+      "published_at": "2026-08-18T11:10:47+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.06889415,
+      "source": "MarketBeat",
+      "source_id": "97c45bd5b3b9200374425581",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://www.marketbeat.com/instant-alerts/filing-pzena-investment-management-llc-makes-new-5781-million-investment-in-scansource-inc-scsc-2026-08-18/"
+    },
+    {
+      "available_at": "2026-08-18T16:21:00+00:00",
+      "concise_rationale": "analyst_action: Stocks making big moves yesterday: Kyndryl, ScanSource, SentinelOne, FTAI Aviation, and Semtech",
+      "confidence": 0.775,
+      "entities": [
+        "SCSC"
+      ],
+      "expected_direction": -0.6544283125,
+      "headline": "Stocks making big moves yesterday: Kyndryl, ScanSource, SentinelOne, FTAI Aviation, and Semtech",
+      "materiality": 0.3,
+      "novelty": 0.7986577181208054,
+      "published_at": "2026-08-18T16:21:00+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": -0.53923775,
+      "source": "Yahoo Finance",
+      "source_id": "49ece73d71f17e721f227d7f",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://finance.yahoo.com/markets/stocks/articles/stocks-making-big-moves-yesterday-202133167.html"
+    },
+    {
+      "available_at": "2026-08-17T17:41:46+00:00",
+      "concise_rationale": "guidance: ScanSource (SCSC) Stock Trades Down, Here Is Why",
+      "confidence": 0.7989999999999999,
+      "entities": [
+        "SCSC"
+      ],
+      "expected_direction": -0.6156467125,
+      "headline": "ScanSource (SCSC) Stock Trades Down, Here Is Why",
+      "materiality": 0.45999999999999996,
+      "novelty": 0.625,
+      "published_at": "2026-08-17T17:41:46+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": -0.48752894999999996,
+      "source": "TradingView",
+      "source_id": "4ae11202f5c32469b267ad87",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://www.tradingview.com/news/stockstory:2c118e92b094b:0-scansource-scsc-stock-trades-down-here-is-why/"
+    },
+    {
+      "available_at": "2026-08-17T12:41:46+00:00",
+      "concise_rationale": "analyst_action: ScanSource (NASDAQ:SCSC) Downgraded by Northcoast Research to Neutral",
+      "confidence": 0.7989999999999999,
+      "entities": [
+        "SCSC",
+        "BLK"
+      ],
+      "expected_direction": -0.541476025,
+      "headline": "ScanSource (NASDAQ:SCSC) Downgraded by Northcoast Research to Neutral",
+      "materiality": 0.45999999999999996,
+      "novelty": 0.6390977443609023,
+      "published_at": "2026-08-17T12:41:46+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": -0.3886347,
+      "source": "MarketBeat",
+      "source_id": "ea0cca35c98b5c7af6303187",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://www.marketbeat.com/instant-alerts/scansource-nasdaqscsc-downgraded-by-northcoast-research-to-neutral-2026-08-17/"
+    },
+    {
+      "available_at": "2026-08-17T12:40:08+00:00",
+      "concise_rationale": "management_change: ScanSource board member Peter Browning retires after 12 years",
+      "confidence": 0.847,
+      "entities": [
+        "SCSC"
+      ],
+      "expected_direction": 0.041627625,
+      "headline": "ScanSource board member Peter Browning retires after 12 years",
+      "materiality": 0.78,
+      "novelty": 0.34172661870503596,
+      "published_at": "2026-08-17T12:40:08+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.0555035,
+      "source": "Investing.com",
+      "source_id": "0cbbf937e5204b803b4efc5c",
+      "source_quality": 0.6,
+      "topic": "management_change",
+      "url": "https://www.investing.com/news/company-news/scansource-board-member-peter-browning-retires-after-12-years-93CH-4862997"
+    },
+    {
+      "available_at": "2026-08-18T00:10:48+00:00",
+      "concise_rationale": "other: ScanSource board member Peter Browning retires after 12 years By Investing.com",
+      "confidence": 0.775,
+      "entities": [
+        "SCSC"
+      ],
+      "expected_direction": 0.0217815,
+      "headline": "ScanSource board member Peter Browning retires after 12 years By Investing.com",
+      "materiality": 0.3,
+      "novelty": 0.6277372262773723,
+      "published_at": "2026-08-18T00:10:48+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.029042,
+      "source": "Investing.com Nigeria",
+      "source_id": "3b0724bb206040f0644dbc38",
+      "source_quality": 0.6,
+      "topic": "other",
+      "url": "https://ng.investing.com/news/stock-market-news/scansource-board-member-peter-browning-retires-after-12-years-93CH-2662807"
+    }
+  ],
+  "selected_peer_news": [],
+  "selected_sector_news": [],
+  "ticker": "SCSC"
+}

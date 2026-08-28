@@ -1,0 +1,368 @@
+{
+  "company_history_summary": {
+    "mean_prior_earnings_abnormal_return": 0.0,
+    "mean_prior_eps_surprise": 0.0,
+    "mean_prior_revenue_surprise": 0.0,
+    "prior_earnings_count": 0.0,
+    "similar_earnings_event_mean_reaction": 0.0,
+    "similar_eps_surprise_mean_reaction": 0.0,
+    "similar_event_count": 0.0,
+    "similar_revenue_surprise_mean_reaction": 0.0
+  },
+  "created_at": "2026-08-19T14:00:52.247114+00:00",
+  "cutoff": "2026-08-19T12:00:00+00:00",
+  "earnings": null,
+  "event_id": "ea_TGT_Q2_2026",
+  "feature_availability": {
+    "company_history": 0.0,
+    "company_news": 1.0,
+    "eps": 0.0,
+    "guidance": 0.0,
+    "guidance_consensus": 0.0,
+    "peer_news": 0.0,
+    "peers": 0.0,
+    "price_5y": 0.0,
+    "reasoning": 1.0,
+    "revenue": 0.0,
+    "sector_news": 0.0
+  },
+  "feature_spec_version": "v3.2-disclosure-results",
+  "guidance": null,
+  "model_version": "v3_lite_operator_2026_08_19",
+  "peer_summary": {
+    "peer_abnormal_return_1d": 0.0,
+    "peer_dispersion_1d": 0.0,
+    "peer_dispersion_5d": 0.0,
+    "peer_material_news_flag": 0.0,
+    "peer_mean_return_1d": 0.0,
+    "peer_mean_return_20d": 0.0,
+    "peer_mean_return_5d": 0.0,
+    "peer_negative_news_score": 0.0,
+    "peer_news_count_24h": 0.0,
+    "peer_positive_news_score": 0.0,
+    "recent_peer_earnings_count": 0.0,
+    "recent_peer_eps_surprise_mean": 0.0,
+    "recent_peer_guidance_signal_mean": 0.0,
+    "recent_peer_post_earnings_abnormal_return_mean": 0.0,
+    "recent_peer_revenue_surprise_mean": 0.0
+  },
+  "prediction": 0.704602510460251,
+  "price_context": {
+    "distance_from_20d_high": 0.0,
+    "distance_from_20d_low": 0.0,
+    "distance_from_52w_high": 0.0,
+    "distance_from_52w_low": 0.0,
+    "realized_volatility_20d": 0.0,
+    "realized_volatility_252d": 0.0,
+    "realized_volatility_60d": 0.0,
+    "return_120d": 0.0,
+    "return_1d_pre_event": 0.0,
+    "return_20d": 0.0,
+    "return_252d": 0.0,
+    "return_3y": 0.0,
+    "return_5d": 0.0,
+    "return_5y": 0.0,
+    "return_60d": 0.0
+  },
+  "provider_receipts": [
+    {
+      "count": 0,
+      "provider_call": "earnings.current",
+      "retrieved_at": "2026-08-19T14:00:51.790574+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "guidance.current",
+      "retrieved_at": "2026-08-19T14:00:51.790587+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "matched_fields": [],
+      "parser_version": "disclosure_results_v1",
+      "provider_call": "event_disclosure.results",
+      "retrieved_at": "2026-08-19T14:00:51.790625+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "metadata",
+      "retrieved_at": "2026-08-19T14:00:51.790627+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "peers",
+      "retrieved_at": "2026-08-19T14:00:51.790634+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 50,
+      "provider_call": "news.company",
+      "retrieved_at": "2026-08-19T14:00:51.790646+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 50,
+      "kind": "company_news",
+      "retrieved_at": "2026-08-19T14:00:51.790652+00:00",
+      "status": "ok"
+    }
+  ],
+  "reasoning": {
+    "company_news_signal": 0.5334450691799925,
+    "concise_rationale": "EPS=+0.00, revenue=+0.00, guidance=+0.00; priced-in=-0.00, company-news=+0.53, peers=+0.00, sector=+0.00, contradiction=0.00.",
+    "confidence": 0.45882,
+    "contradiction_score": 0.0,
+    "cutoff": "2026-08-19T12:00:00+00:00",
+    "earnings_quality": 0.0,
+    "expectations_gap": 0.0,
+    "guidance_quality": 0.0,
+    "historical_analogy_signal": 0.0,
+    "materiality": 0.5334450691799925,
+    "overall_event_signal": 0.053344506917999246,
+    "peer_signal": 0.0,
+    "priced_in_score": -0.0,
+    "revenue_quality": 0.0,
+    "sector_signal": 0.0,
+    "source_ids": [
+      "774b0f40d00e7c49c90c83ba",
+      "51a25e7efcd4f2d7b4ccc9b1",
+      "78510a145b1dfe88c1a8ccfb",
+      "2067f454f4e1136e3745bf15",
+      "e92fbf1ce34037dc37019ee0",
+      "1d2029b512145e194b3415fc",
+      "df4679956bf385ed764af93e",
+      "6daafe751faf97844f1ebc20",
+      "d180f1b8877c33f797f4bc6b",
+      "8d7d3f6df497bf72e5275bdc"
+    ]
+  },
+  "selected_company_news": [
+    {
+      "available_at": "2026-08-19T11:51:23+00:00",
+      "concise_rationale": "guidance: Target (NYSE: TGT) nearly doubles Q2 EPS as tariff refunds hit",
+      "confidence": 0.95,
+      "entities": [
+        "TGT"
+      ],
+      "expected_direction": 0.8662056250000001,
+      "headline": "Target (NYSE: TGT) nearly doubles Q2 EPS as tariff refunds hit",
+      "materiality": 0.78,
+      "novelty": 1.0,
+      "published_at": "2026-08-19T11:51:23+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.8216075,
+      "source": "Stock Titan",
+      "source_id": "774b0f40d00e7c49c90c83ba",
+      "source_quality": 0.95,
+      "topic": "guidance",
+      "url": "https://www.stocktitan.net/sec-filings/TGT/8-k-target-corp-reports-material-event-d12ca38849de.html"
+    },
+    {
+      "available_at": "2026-08-19T10:10:14+00:00",
+      "concise_rationale": "guidance: Target Corporation Reports Second Quarter Earnings",
+      "confidence": 0.95,
+      "entities": [
+        "TGT"
+      ],
+      "expected_direction": 0.7164490375,
+      "headline": "Target Corporation Reports Second Quarter Earnings",
+      "materiality": 1.0,
+      "novelty": 0.6307692307692307,
+      "published_at": "2026-08-19T10:10:14+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.62193205,
+      "source": "PR Newswire",
+      "source_id": "51a25e7efcd4f2d7b4ccc9b1",
+      "source_quality": 0.95,
+      "topic": "guidance",
+      "url": "https://www.prnewswire.com/news-releases/target-corporation-reports-second-quarter-earnings-302854584.html"
+    },
+    {
+      "available_at": "2026-08-19T10:30:00+00:00",
+      "concise_rationale": "guidance: Target Lifts Full-Year Outlook as Recovery Efforts Gain Ground",
+      "confidence": 0.95,
+      "entities": [
+        "TGT"
+      ],
+      "expected_direction": 0.7084672,
+      "headline": "Target Lifts Full-Year Outlook as Recovery Efforts Gain Ground",
+      "materiality": 1.0,
+      "novelty": 0.6776859504132231,
+      "published_at": "2026-08-19T10:30:00+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.6112896,
+      "source": "Bloomberg.com",
+      "source_id": "78510a145b1dfe88c1a8ccfb",
+      "source_quality": 0.85,
+      "topic": "guidance",
+      "url": "https://www.bloomberg.com/news/articles/2026-08-19/tgt-target-lifts-full-year-outlook-as-recovery-efforts-gain-ground"
+    },
+    {
+      "available_at": "2026-08-19T11:04:52+00:00",
+      "concise_rationale": "product_launch: Ollie\u2019s will report fiscal second-quarter results before the market opens Sept. 2",
+      "confidence": 0.9039999999999999,
+      "entities": [
+        "OLLI",
+        "TGT"
+      ],
+      "expected_direction": -0.060594300000000004,
+      "headline": "Ollie\u2019s will report fiscal second-quarter results before the market opens Sept. 2",
+      "materiality": 0.45999999999999996,
+      "novelty": 0.8489208633093526,
+      "published_at": "2026-08-19T11:04:52+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": -0.0807924,
+      "source": "Stock Titan",
+      "source_id": "2067f454f4e1136e3745bf15",
+      "source_quality": 0.95,
+      "topic": "product_launch",
+      "url": "https://www.stocktitan.net/news/OLLI/ollie-s-bargain-outlet-holdings-inc-announces-second-quarter-fiscal-bmmzt1php9pf.html"
+    },
+    {
+      "available_at": "2026-08-19T07:12:29+00:00",
+      "concise_rationale": "guidance: Target, Keysight Technologies And 3 Stocks To Watch Heading Into Wednesday",
+      "confidence": 0.871,
+      "entities": [
+        "KEYS",
+        "TGT",
+        "LOW",
+        "TJX"
+      ],
+      "expected_direction": 0.6171799,
+      "headline": "Target, Keysight Technologies And 3 Stocks To Watch Heading Into Wednesday",
+      "materiality": 0.94,
+      "novelty": 0.6931818181818181,
+      "published_at": "2026-08-19T07:12:29+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.4895732,
+      "source": "Benzinga",
+      "source_id": "e92fbf1ce34037dc37019ee0",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://www.benzinga.com/markets/equities/26/08/61292875/target-keysight-technologies-and-3-stocks-to-watch-heading-into-wednesday"
+    },
+    {
+      "available_at": "2026-08-18T21:39:29+00:00",
+      "concise_rationale": "pricing: Target Q2 Results: Analysts Expect $2.31 EPS, Revenue at $26.15 Billion",
+      "confidence": 0.88,
+      "entities": [
+        "TGT",
+        "ULTA",
+        "WMT"
+      ],
+      "expected_direction": 0.5896483375,
+      "headline": "Target Q2 Results: Analysts Expect $2.31 EPS, Revenue at $26.15 Billion",
+      "materiality": 1.0,
+      "novelty": 0.7214285714285714,
+      "published_at": "2026-08-18T21:39:29+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.45286445,
+      "source": "scanx.trade",
+      "source_id": "1d2029b512145e194b3415fc",
+      "source_quality": 0.6,
+      "topic": "pricing",
+      "url": "https://scanx.trade/stock-market-news/companies/target-q2-results-analysts-expect-2-31-eps-revenue-26-15-billion/48631254"
+    },
+    {
+      "available_at": "2026-08-19T10:08:20+00:00",
+      "concise_rationale": "M&A: Exclusive: Kimco, Costco Make $59M LA Deal",
+      "confidence": 0.847,
+      "entities": [
+        "KIM",
+        "COST",
+        "TGT",
+        "WMT"
+      ],
+      "expected_direction": 0.623635375,
+      "headline": "Exclusive: Kimco, Costco Make $59M LA Deal",
+      "materiality": 0.78,
+      "novelty": 0.773109243697479,
+      "published_at": "2026-08-19T10:08:20+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.4981805,
+      "source": "CommercialSearch",
+      "source_id": "df4679956bf385ed764af93e",
+      "source_quality": 0.6,
+      "topic": "M&A",
+      "url": "https://www.commercialsearch.com/news/exclusive-kimco-costco-make-59m-la-deal/"
+    },
+    {
+      "available_at": "2026-08-18T18:39:50+00:00",
+      "concise_rationale": "analyst_action: Pre-Earnings Check-In With TJX Companies",
+      "confidence": 0.871,
+      "entities": [
+        "TJX",
+        "TGT"
+      ],
+      "expected_direction": 0.1112752875,
+      "headline": "Pre-Earnings Check-In With TJX Companies",
+      "materiality": 0.94,
+      "novelty": 0.7647058823529411,
+      "published_at": "2026-08-18T18:39:50+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.14836705,
+      "source": "Finviz",
+      "source_id": "6daafe751faf97844f1ebc20",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://finviz.com/news/383391/pre-earnings-check-in-with-tjx-companies"
+    },
+    {
+      "available_at": "2026-08-19T10:14:21+00:00",
+      "concise_rationale": "M&A: K2 Principal Fund L.P. Invests $4.38 Million in Kenvue Inc. $KVUE",
+      "confidence": 0.847,
+      "entities": [
+        "KVUE",
+        "TGT"
+      ],
+      "expected_direction": 0.045313125,
+      "headline": "K2 Principal Fund L.P. Invests $4.38 Million in Kenvue Inc. $KVUE",
+      "materiality": 0.78,
+      "novelty": 0.698051948051948,
+      "published_at": "2026-08-19T10:14:21+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.060417500000000006,
+      "source": "MarketBeat",
+      "source_id": "d180f1b8877c33f797f4bc6b",
+      "source_quality": 0.6,
+      "topic": "M&A",
+      "url": "https://www.marketbeat.com/instant-alerts/filing-k2-principal-fund-lp-invests-438-million-in-kenvue-inc-kvue-2026-08-19/"
+    },
+    {
+      "available_at": "2026-08-19T10:10:14+00:00",
+      "concise_rationale": "guidance: Target raises full-year outlook as turnaround gains momentum",
+      "confidence": 0.871,
+      "entities": [
+        "TGT"
+      ],
+      "expected_direction": 0.71770435,
+      "headline": "Target raises full-year outlook as turnaround gains momentum",
+      "materiality": 0.94,
+      "novelty": 0.5327868852459017,
+      "published_at": "2026-08-19T10:10:14+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.6236058,
+      "source": "The Business Journals",
+      "source_id": "8d7d3f6df497bf72e5275bdc",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://www.bizjournals.com/twincities/news/2026/08/19/target-earnings-q2-2026.html"
+    }
+  ],
+  "selected_peer_news": [],
+  "selected_sector_news": [],
+  "ticker": "TGT"
+}

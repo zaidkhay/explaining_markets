@@ -1,0 +1,375 @@
+{
+  "company_history_summary": {
+    "mean_prior_earnings_abnormal_return": 0.0,
+    "mean_prior_eps_surprise": 0.0,
+    "mean_prior_revenue_surprise": 0.0,
+    "prior_earnings_count": 0.0,
+    "similar_earnings_event_mean_reaction": 0.0,
+    "similar_eps_surprise_mean_reaction": 0.0,
+    "similar_event_count": 0.0,
+    "similar_revenue_surprise_mean_reaction": 0.0
+  },
+  "created_at": "2026-08-20T22:00:37.067501+00:00",
+  "cutoff": "2026-08-20T20:30:00+00:00",
+  "earnings": {
+    "abnormal_return": null,
+    "available_at": "2026-08-20T20:30:00+00:00",
+    "consensus_eps": -11.0,
+    "consensus_revenue": -11.0,
+    "event_id": null,
+    "reported_eps": 1.875,
+    "reported_revenue": 1.875,
+    "retrieved_at": "2026-08-20T20:30:00+00:00",
+    "source": "disclosure_results_v1",
+    "ticker": "OSIS",
+    "value_timestamp": "2026-08-20T20:30:00+00:00"
+  },
+  "event_id": "ea_OSIS_Q4_2026",
+  "feature_availability": {
+    "company_history": 0.0,
+    "company_news": 1.0,
+    "eps": 1.0,
+    "guidance": 0.0,
+    "guidance_consensus": 0.0,
+    "peer_news": 0.0,
+    "peers": 0.0,
+    "price_5y": 0.0,
+    "reasoning": 1.0,
+    "revenue": 1.0,
+    "sector_news": 0.0
+  },
+  "feature_spec_version": "v3.2-disclosure-results",
+  "guidance": null,
+  "model_version": "v3_lite_operator_2026_08_19",
+  "peer_summary": {
+    "peer_abnormal_return_1d": 0.0,
+    "peer_dispersion_1d": 0.0,
+    "peer_dispersion_5d": 0.0,
+    "peer_material_news_flag": 0.0,
+    "peer_mean_return_1d": 0.0,
+    "peer_mean_return_20d": 0.0,
+    "peer_mean_return_5d": 0.0,
+    "peer_negative_news_score": 0.0,
+    "peer_news_count_24h": 0.0,
+    "peer_positive_news_score": 0.0,
+    "recent_peer_earnings_count": 0.0,
+    "recent_peer_eps_surprise_mean": 0.0,
+    "recent_peer_guidance_signal_mean": 0.0,
+    "recent_peer_post_earnings_abnormal_return_mean": 0.0,
+    "recent_peer_revenue_surprise_mean": 0.0
+  },
+  "prediction": 0.18200836820083682,
+  "price_context": {
+    "distance_from_20d_high": 0.0,
+    "distance_from_20d_low": 0.0,
+    "distance_from_52w_high": 0.0,
+    "distance_from_52w_low": 0.0,
+    "realized_volatility_20d": 0.0,
+    "realized_volatility_252d": 0.0,
+    "realized_volatility_60d": 0.0,
+    "return_120d": 0.0,
+    "return_1d_pre_event": 0.0,
+    "return_20d": 0.0,
+    "return_252d": 0.0,
+    "return_3y": 0.0,
+    "return_5d": 0.0,
+    "return_5y": 0.0,
+    "return_60d": 0.0
+  },
+  "provider_receipts": [
+    {
+      "count": 0,
+      "provider_call": "earnings.current",
+      "retrieved_at": "2026-08-20T22:00:36.842832+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "guidance.current",
+      "retrieved_at": "2026-08-20T22:00:36.842851+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 2,
+      "matched_fields": [
+        "eps",
+        "revenue"
+      ],
+      "parser_version": "disclosure_results_v1",
+      "provider_call": "event_disclosure.results",
+      "retrieved_at": "2026-08-20T22:00:36.843483+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "metadata",
+      "retrieved_at": "2026-08-20T22:00:36.843487+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "peers",
+      "retrieved_at": "2026-08-20T22:00:36.843494+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 17,
+      "provider_call": "news.company",
+      "retrieved_at": "2026-08-20T22:00:36.843502+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 17,
+      "kind": "company_news",
+      "retrieved_at": "2026-08-20T22:00:36.843504+00:00",
+      "status": "ok"
+    }
+  ],
+  "reasoning": {
+    "company_news_signal": 0.4143767139951903,
+    "concise_rationale": "EPS=+1.00, revenue=+1.00, guidance=+0.00; priced-in=-0.00, company-news=+0.41, peers=+0.00, sector=+0.00, contradiction=0.00.",
+    "confidence": 0.6150599999999999,
+    "contradiction_score": 0.0,
+    "cutoff": "2026-08-20T20:30:00+00:00",
+    "earnings_quality": 1.0,
+    "expectations_gap": 0.7,
+    "guidance_quality": 0.0,
+    "historical_analogy_signal": 0.0,
+    "materiality": 1.0,
+    "overall_event_signal": 0.42043767139951904,
+    "peer_signal": 0.0,
+    "priced_in_score": -0.0,
+    "revenue_quality": 1.0,
+    "sector_signal": 0.0,
+    "source_ids": [
+      "af87cfe9a3f6362c11f8e21e",
+      "7affe54593425be0b05bd3bb",
+      "2a6a0a44a46f1f4e78775bf9",
+      "4aaed48f4e34cd1582b9a867",
+      "26fee5434a95e71ffee12877",
+      "29683cef0b6652cef8259508",
+      "5d917f25acd65f5dae7736d2",
+      "89575d26c2926022b0f310e7",
+      "d0112766321bca10e6461eb8",
+      "668b4d15ad8ad1440736633f"
+    ]
+  },
+  "selected_company_news": [
+    {
+      "available_at": "2026-08-20T13:11:14+00:00",
+      "concise_rationale": "demand: Why Is OSI Systems (NASDAQ:OSIS) in Focus Today?",
+      "confidence": 0.847,
+      "entities": [
+        "OSIS"
+      ],
+      "expected_direction": 0.1271190375,
+      "headline": "Why Is OSI Systems (NASDAQ:OSIS) in Focus Today?",
+      "materiality": 0.78,
+      "novelty": 1.0,
+      "published_at": "2026-08-20T13:11:14+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.16949205,
+      "source": "Kalkine Media",
+      "source_id": "af87cfe9a3f6362c11f8e21e",
+      "source_quality": 0.6,
+      "topic": "demand",
+      "url": "https://kalkinemedia.com/us/stocks/midcap/why-is-osi-systems-nasdaqosis-in-focus-today"
+    },
+    {
+      "available_at": "2026-08-19T12:13:04+00:00",
+      "concise_rationale": "supply_constraint: Mobile X-rays from OSI Systems will screen baggage and parcels for border officials",
+      "confidence": 0.871,
+      "entities": [
+        "OSIS"
+      ],
+      "expected_direction": 0.1492608,
+      "headline": "Mobile X-rays from OSI Systems will screen baggage and parcels for border officials",
+      "materiality": 0.94,
+      "novelty": 0.70703125,
+      "published_at": "2026-08-19T12:13:04+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.1990144,
+      "source": "Stock Titan",
+      "source_id": "7affe54593425be0b05bd3bb",
+      "source_quality": 0.6,
+      "topic": "supply_constraint",
+      "url": "https://www.stocktitan.net/news/OSIS/osi-systems-awarded-85-million-idiq-contract-from-customs-and-border-tpolxy3mg52h.html"
+    },
+    {
+      "available_at": "2026-08-19T14:13:05+00:00",
+      "concise_rationale": "other: OSIS Looks 13.8% Overvalued on GF Value\u2122",
+      "confidence": 0.847,
+      "entities": [
+        "OSIS"
+      ],
+      "expected_direction": 0.5898994,
+      "headline": "OSIS Looks 13.8% Overvalued on GF Value\u2122",
+      "materiality": 0.78,
+      "novelty": 0.7880434782608696,
+      "published_at": "2026-08-19T14:13:05+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.45319919999999997,
+      "source": "GuruFocus",
+      "source_id": "2a6a0a44a46f1f4e78775bf9",
+      "source_quality": 0.6,
+      "topic": "other",
+      "url": "https://www.gurufocus.com/news/9043173/osis-looks-138-overvalued-on-gf-value"
+    },
+    {
+      "available_at": "2026-08-19T03:42:07+00:00",
+      "concise_rationale": "guidance: Earnings To Watch: OSI Systems (OSIS) Reports Q2 Results Tomorrow",
+      "confidence": 0.88,
+      "entities": [
+        "OSIS",
+        "ZBRA",
+        "COIN",
+        "NVDA"
+      ],
+      "expected_direction": 0.6659576875,
+      "headline": "Earnings To Watch: OSI Systems (OSIS) Reports Q2 Results Tomorrow",
+      "materiality": 1.0,
+      "novelty": 0.6355140186915889,
+      "published_at": "2026-08-19T03:42:07+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.55461025,
+      "source": "Yahoo Finance",
+      "source_id": "4aaed48f4e34cd1582b9a867",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://finance.yahoo.com/markets/stocks/articles/earnings-watch-osi-systems-osis-032456233.html"
+    },
+    {
+      "available_at": "2026-08-19T15:13:05+00:00",
+      "concise_rationale": "analyst_action: What\u2019s Behind OSI Systems (OSIS) Latest Share Price Move?",
+      "confidence": 0.847,
+      "entities": [
+        "OSIS"
+      ],
+      "expected_direction": 0.14852418750000002,
+      "headline": "What\u2019s Behind OSI Systems (OSIS) Latest Share Price Move?",
+      "materiality": 0.78,
+      "novelty": 0.6515151515151515,
+      "published_at": "2026-08-19T15:13:05+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.19803225000000002,
+      "source": "Simply Wall Street",
+      "source_id": "26fee5434a95e71ffee12877",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://simplywall.st/stocks/us/tech/nasdaq-osis/osi-systems/news/whats-behind-osi-systems-osis-latest-share-price-move"
+    },
+    {
+      "available_at": "2026-08-19T20:13:05+00:00",
+      "concise_rationale": "other: Rapiscan Named Official Physical Screening and Security Technology Hardware/Software Solutions Provider of the LA28 Olympic and Paralympic Games and Supporter of Team USA",
+      "confidence": 0.88,
+      "entities": [
+        "OSIS"
+      ],
+      "expected_direction": 0.23004003750000002,
+      "headline": "Rapiscan Named Official Physical Screening and Security Technology Hardware/Software Solutions Provider of the LA28 Olympic and Paralympic Games and Supporter of Team USA",
+      "materiality": 0.3,
+      "novelty": 0.8604651162790697,
+      "published_at": "2026-08-19T20:13:05+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.30672005,
+      "source": "News-Press NOW",
+      "source_id": "29683cef0b6652cef8259508",
+      "source_quality": 0.95,
+      "topic": "other",
+      "url": "https://www.newspressnow.com/sports/chiefs/rapiscan-named-official-physical-screening-and-security-technology-hardware-software-solutions-provider-of-the-la28/article_6b3a93d9-bef1-5980-830a-26f9c825ffcc.html"
+    },
+    {
+      "available_at": "2026-08-18T10:10:53+00:00",
+      "concise_rationale": "demand: How New US$200 Million CBP Contract At OSI Systems (OSIS) Has Changed Its Investment Story",
+      "confidence": 0.88,
+      "entities": [
+        "OSIS"
+      ],
+      "expected_direction": 0.6743660875,
+      "headline": "How New US$200 Million CBP Contract At OSI Systems (OSIS) Has Changed Its Investment Story",
+      "materiality": 1.0,
+      "novelty": 0.65,
+      "published_at": "2026-08-18T10:10:53+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.5658214500000001,
+      "source": "Simply Wall Street",
+      "source_id": "5d917f25acd65f5dae7736d2",
+      "source_quality": 0.6,
+      "topic": "demand",
+      "url": "https://simplywall.st/stocks/us/tech/nasdaq-osis/osi-systems/news/how-new-us200-million-cbp-contract-at-osi-systems-osis-has-c"
+    },
+    {
+      "available_at": "2026-08-17T13:43:37+00:00",
+      "concise_rationale": "other: OSI Systems wins $200M border security contract from CBP",
+      "confidence": 0.95,
+      "entities": [
+        "OSIS"
+      ],
+      "expected_direction": 0.39311902499999996,
+      "headline": "OSI Systems wins $200M border security contract from CBP",
+      "materiality": 0.78,
+      "novelty": 0.6282051282051282,
+      "published_at": "2026-08-17T13:43:37+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.5241587,
+      "source": "Investing.com",
+      "source_id": "89575d26c2926022b0f310e7",
+      "source_quality": 0.95,
+      "topic": "other",
+      "url": "https://www.investing.com/news/company-news/osi-systems-wins-200m-border-security-contract-from-cbp-93CH-4863115"
+    },
+    {
+      "available_at": "2026-08-17T16:40:27+00:00",
+      "concise_rationale": "guidance: OSI Systems (OSIS) Q4 2026 Preview: EPS Est. $3.77, Reports August 20",
+      "confidence": 0.88,
+      "entities": [
+        "OSIS"
+      ],
+      "expected_direction": 0.7445358625,
+      "headline": "OSI Systems (OSIS) Q4 2026 Preview: EPS Est. $3.77, Reports August 20",
+      "materiality": 1.0,
+      "novelty": 0.6390977443609023,
+      "published_at": "2026-08-17T16:40:27+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.65938115,
+      "source": "AlphaStreet",
+      "source_id": "d0112766321bca10e6461eb8",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://news.alphastreet.com/osi-systems-osis-q4-2026-preview-eps-est-3-77-reports-august-20/amp/"
+    },
+    {
+      "available_at": "2026-08-17T13:43:37+00:00",
+      "concise_rationale": "analyst_action: Exploring Analyst Estimates for OSI (OSIS) Q4 Earnings, Beyond Revenue and EPS",
+      "confidence": 0.871,
+      "entities": [
+        "OSIS"
+      ],
+      "expected_direction": 0.158145,
+      "headline": "Exploring Analyst Estimates for OSI (OSIS) Q4 Earnings, Beyond Revenue and EPS",
+      "materiality": 0.94,
+      "novelty": 0.6824817518248175,
+      "published_at": "2026-08-17T13:43:37+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.21086000000000002,
+      "source": "Yahoo Finance",
+      "source_id": "668b4d15ad8ad1440736633f",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://finance.yahoo.com/markets/stocks/articles/exploring-analyst-estimates-osi-osis-131502159.html"
+    }
+  ],
+  "selected_peer_news": [],
+  "selected_sector_news": [],
+  "ticker": "OSIS"
+}

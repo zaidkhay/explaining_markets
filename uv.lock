@@ -325,7 +325,7 @@ wheels = [
 ]
 
 [[package]]
-name = "explaining-markets-modal-starter"
+name = "explaining-markets"
 version = "0.1.0b1"
 source = { editable = "." }
 dependencies = [

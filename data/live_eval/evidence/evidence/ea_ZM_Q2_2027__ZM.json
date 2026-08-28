@@ -1,0 +1,167 @@
+{
+  "company_history_summary": {
+    "mean_prior_earnings_abnormal_return": 0.0,
+    "mean_prior_eps_surprise": 0.0,
+    "mean_prior_revenue_surprise": 0.0,
+    "prior_earnings_count": 0.0,
+    "similar_earnings_event_mean_reaction": 0.0,
+    "similar_eps_surprise_mean_reaction": 0.0,
+    "similar_event_count": 0.0,
+    "similar_revenue_surprise_mean_reaction": 0.0
+  },
+  "created_at": "2026-08-25T23:02:19.303096+00:00",
+  "cutoff": "2026-08-25T21:00:00+00:00",
+  "earnings": {
+    "abnormal_return": null,
+    "available_at": "2026-08-25T21:00:00+00:00",
+    "consensus_eps": 6.12,
+    "consensus_revenue": 6.12,
+    "event_id": null,
+    "reported_eps": 27.0,
+    "reported_revenue": 27.0,
+    "retrieved_at": "2026-08-25T21:00:00+00:00",
+    "source": "disclosure_results_v1",
+    "ticker": "ZM",
+    "value_timestamp": "2026-08-25T21:00:00+00:00"
+  },
+  "event_id": "ea_ZM_Q2_2027",
+  "feature_availability": {
+    "company_history": 0.0,
+    "company_news": 0.0,
+    "eps": 1.0,
+    "guidance": 0.0,
+    "guidance_consensus": 0.0,
+    "peer_news": 0.0,
+    "peers": 0.0,
+    "price_5y": 0.0,
+    "reasoning": 1.0,
+    "revenue": 1.0,
+    "sector_news": 0.0
+  },
+  "feature_spec_version": "v3.2-disclosure-results",
+  "guidance": {
+    "available_at": "2026-08-25T21:00:00+00:00",
+    "direction": "raised",
+    "ebitda": null,
+    "eps_consensus": null,
+    "eps_high": null,
+    "eps_low": null,
+    "margin": null,
+    "material_kpis": {},
+    "retrieved_at": "2026-08-25T21:00:00+00:00",
+    "revenue_consensus": null,
+    "revenue_high": null,
+    "revenue_low": null,
+    "source": "disclosure_results_v1",
+    "ticker": "ZM",
+    "value_timestamp": "2026-08-25T21:00:00+00:00"
+  },
+  "model_version": "v3_lite_operator_2026_08_19",
+  "peer_summary": {
+    "peer_abnormal_return_1d": 0.0,
+    "peer_dispersion_1d": 0.0,
+    "peer_dispersion_5d": 0.0,
+    "peer_material_news_flag": 0.0,
+    "peer_mean_return_1d": 0.0,
+    "peer_mean_return_20d": 0.0,
+    "peer_mean_return_5d": 0.0,
+    "peer_negative_news_score": 0.0,
+    "peer_news_count_24h": 0.0,
+    "peer_positive_news_score": 0.0,
+    "recent_peer_earnings_count": 0.0,
+    "recent_peer_eps_surprise_mean": 0.0,
+    "recent_peer_guidance_signal_mean": 0.0,
+    "recent_peer_post_earnings_abnormal_return_mean": 0.0,
+    "recent_peer_revenue_surprise_mean": 0.0
+  },
+  "prediction": 0.9740585774058578,
+  "price_context": {
+    "distance_from_20d_high": 0.0,
+    "distance_from_20d_low": 0.0,
+    "distance_from_52w_high": 0.0,
+    "distance_from_52w_low": 0.0,
+    "realized_volatility_20d": 0.0,
+    "realized_volatility_252d": 0.0,
+    "realized_volatility_60d": 0.0,
+    "return_120d": 0.0,
+    "return_1d_pre_event": 0.0,
+    "return_20d": 0.0,
+    "return_252d": 0.0,
+    "return_3y": 0.0,
+    "return_5d": 0.0,
+    "return_5y": 0.0,
+    "return_60d": 0.0
+  },
+  "provider_receipts": [
+    {
+      "count": 0,
+      "provider_call": "earnings.current",
+      "retrieved_at": "2026-08-25T23:02:19.090466+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "guidance.current",
+      "retrieved_at": "2026-08-25T23:02:19.090488+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 3,
+      "matched_fields": [
+        "eps",
+        "revenue",
+        "guidance_raised"
+      ],
+      "parser_version": "disclosure_results_v1",
+      "provider_call": "event_disclosure.results",
+      "retrieved_at": "2026-08-25T23:02:19.090754+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "metadata",
+      "retrieved_at": "2026-08-25T23:02:19.090758+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "peers",
+      "retrieved_at": "2026-08-25T23:02:19.090764+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "news.company",
+      "retrieved_at": "2026-08-25T23:02:19.090774+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "kind": "company_news",
+      "retrieved_at": "2026-08-25T23:02:19.090777+00:00",
+      "status": "ok"
+    }
+  ],
+  "reasoning": {
+    "company_news_signal": 0.0,
+    "concise_rationale": "EPS=+1.00, revenue=+1.00, guidance=+0.35; priced-in=-0.00, company-news=+0.00, peers=+0.00, sector=+0.00, contradiction=0.22.",
+    "confidence": 0.44,
+    "contradiction_score": 0.21666666666666667,
+    "cutoff": "2026-08-25T21:00:00+00:00",
+    "earnings_quality": 1.0,
+    "expectations_gap": 0.8049999999999999,
+    "guidance_quality": 0.35,
+    "historical_analogy_signal": 0.0,
+    "materiality": 1.0,
+    "overall_event_signal": 0.47035000000000005,
+    "peer_signal": 0.0,
+    "priced_in_score": -0.0,
+    "revenue_quality": 1.0,
+    "sector_signal": 0.0,
+    "source_ids": []
+  },
+  "selected_company_news": [],
+  "selected_peer_news": [],
+  "selected_sector_news": [],
+  "ticker": "ZM"
+}

@@ -1,0 +1,242 @@
+{
+  "company_history_summary": {
+    "mean_prior_earnings_abnormal_return": 0.0,
+    "mean_prior_eps_surprise": 0.0,
+    "mean_prior_revenue_surprise": 0.0,
+    "prior_earnings_count": 0.0,
+    "similar_earnings_event_mean_reaction": 0.0,
+    "similar_eps_surprise_mean_reaction": 0.0,
+    "similar_event_count": 0.0,
+    "similar_revenue_surprise_mean_reaction": 0.0
+  },
+  "created_at": "2026-08-19T23:00:39.596539+00:00",
+  "cutoff": "2026-08-19T20:30:00+00:00",
+  "earnings": {
+    "abnormal_return": null,
+    "available_at": "2026-08-19T20:30:00+00:00",
+    "consensus_eps": 26.0,
+    "consensus_revenue": 26.0,
+    "event_id": null,
+    "reported_eps": 27.0,
+    "reported_revenue": 27.0,
+    "retrieved_at": "2026-08-19T20:30:00+00:00",
+    "source": "disclosure_results_v1",
+    "ticker": "BILL",
+    "value_timestamp": "2026-08-19T20:30:00+00:00"
+  },
+  "event_id": "ea_BILL_Q4_2026",
+  "feature_availability": {
+    "company_history": 0.0,
+    "company_news": 1.0,
+    "eps": 1.0,
+    "guidance": 0.0,
+    "guidance_consensus": 0.0,
+    "peer_news": 0.0,
+    "peers": 0.0,
+    "price_5y": 0.0,
+    "reasoning": 1.0,
+    "revenue": 1.0,
+    "sector_news": 0.0
+  },
+  "feature_spec_version": "v3.2-disclosure-results",
+  "guidance": null,
+  "model_version": "v3_lite_operator_2026_08_19",
+  "peer_summary": {
+    "peer_abnormal_return_1d": 0.0,
+    "peer_dispersion_1d": 0.0,
+    "peer_dispersion_5d": 0.0,
+    "peer_material_news_flag": 0.0,
+    "peer_mean_return_1d": 0.0,
+    "peer_mean_return_20d": 0.0,
+    "peer_mean_return_5d": 0.0,
+    "peer_negative_news_score": 0.0,
+    "peer_news_count_24h": 0.0,
+    "peer_positive_news_score": 0.0,
+    "recent_peer_earnings_count": 0.0,
+    "recent_peer_eps_surprise_mean": 0.0,
+    "recent_peer_guidance_signal_mean": 0.0,
+    "recent_peer_post_earnings_abnormal_return_mean": 0.0,
+    "recent_peer_revenue_surprise_mean": 0.0
+  },
+  "prediction": 0.1811715481171548,
+  "price_context": {
+    "distance_from_20d_high": 0.0,
+    "distance_from_20d_low": 0.0,
+    "distance_from_52w_high": 0.0,
+    "distance_from_52w_low": 0.0,
+    "realized_volatility_20d": 0.0,
+    "realized_volatility_252d": 0.0,
+    "realized_volatility_60d": 0.0,
+    "return_120d": 0.0,
+    "return_1d_pre_event": 0.0,
+    "return_20d": 0.0,
+    "return_252d": 0.0,
+    "return_3y": 0.0,
+    "return_5d": 0.0,
+    "return_5y": 0.0,
+    "return_60d": 0.0
+  },
+  "provider_receipts": [
+    {
+      "count": 0,
+      "provider_call": "earnings.current",
+      "retrieved_at": "2026-08-19T23:00:39.438822+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "guidance.current",
+      "retrieved_at": "2026-08-19T23:00:39.438840+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 2,
+      "matched_fields": [
+        "eps",
+        "revenue"
+      ],
+      "parser_version": "disclosure_results_v1",
+      "provider_call": "event_disclosure.results",
+      "retrieved_at": "2026-08-19T23:00:39.439451+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "metadata",
+      "retrieved_at": "2026-08-19T23:00:39.439457+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "peers",
+      "retrieved_at": "2026-08-19T23:00:39.439463+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 4,
+      "provider_call": "news.company",
+      "retrieved_at": "2026-08-19T23:00:39.439474+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 4,
+      "kind": "company_news",
+      "retrieved_at": "2026-08-19T23:00:39.439476+00:00",
+      "status": "ok"
+    }
+  ],
+  "reasoning": {
+    "company_news_signal": 0.26993340394110876,
+    "concise_rationale": "EPS=+0.31, revenue=+0.38, guidance=+0.00; priced-in=-0.00, company-news=+0.27, peers=+0.00, sector=+0.00, contradiction=0.00.",
+    "confidence": 0.60998299,
+    "contradiction_score": 0.0,
+    "cutoff": "2026-08-19T20:30:00+00:00",
+    "earnings_quality": 0.3076923076923077,
+    "expectations_gap": 0.23461538461538461,
+    "guidance_quality": 0.0,
+    "historical_analogy_signal": 0.0,
+    "materiality": 0.38461538461538464,
+    "overall_event_signal": 0.15495487885564935,
+    "peer_signal": 0.0,
+    "priced_in_score": -0.0,
+    "revenue_quality": 0.38461538461538464,
+    "sector_signal": 0.0,
+    "source_ids": [
+      "f0ef22fb33b35c4d02b05f9e",
+      "b656ee90505f3bc54d793615",
+      "6b08b0b8805c05a344cf1408",
+      "0ceb1ee273834a50dd769911"
+    ]
+  },
+  "selected_company_news": [
+    {
+      "available_at": "2026-08-19T14:11:54+00:00",
+      "concise_rationale": "guidance: Bill.com earnings on deck: Profitability test after job cuts",
+      "confidence": 0.88,
+      "entities": [
+        "BILL"
+      ],
+      "expected_direction": 0.7158289375,
+      "headline": "Bill.com earnings on deck: Profitability test after job cuts",
+      "materiality": 1.0,
+      "novelty": 1.0,
+      "published_at": "2026-08-19T14:11:54+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.62110525,
+      "source": "Investing.com",
+      "source_id": "f0ef22fb33b35c4d02b05f9e",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://m.investing.com/news/earnings/billcom-earnings-on-deck-profitability-test-after-job-cuts-93CH-4867674?ampMode=1"
+    },
+    {
+      "available_at": "2026-08-18T11:10:51+00:00",
+      "concise_rationale": "other: BILL Q4'26 Earnings: EPS estimate is 0.71 USD",
+      "confidence": 0.871,
+      "entities": [
+        "BILL"
+      ],
+      "expected_direction": 0.0492219,
+      "headline": "BILL Q4'26 Earnings: EPS estimate is 0.71 USD",
+      "materiality": 0.94,
+      "novelty": 0.6213592233009708,
+      "published_at": "2026-08-18T11:10:51+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.0656292,
+      "source": "TradingView",
+      "source_id": "b656ee90505f3bc54d793615",
+      "source_quality": 0.6,
+      "topic": "other",
+      "url": "https://www.tradingview.com/news/tradingview:a362dedcc84ab:0-bill-q4-26-earnings-eps-estimate-is-0-71-usd/"
+    },
+    {
+      "available_at": "2026-08-18T11:10:51+00:00",
+      "concise_rationale": "analyst_action: Analysts Conflicted on These Technology Names: Bill.com Holdings (BILL), Workday (WDAY) and Monday.com (MNDY)",
+      "confidence": 0.775,
+      "entities": [
+        "BILL",
+        "WDAY"
+      ],
+      "expected_direction": 0.08704458749999999,
+      "headline": "Analysts Conflicted on These Technology Names: Bill.com Holdings (BILL), Workday (WDAY) and Monday.com (MNDY)",
+      "materiality": 0.3,
+      "novelty": 0.765625,
+      "published_at": "2026-08-18T11:10:51+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.11605945,
+      "source": "The Globe and Mail",
+      "source_id": "6b08b0b8805c05a344cf1408",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://www.theglobeandmail.com/investing/markets/markets-news/Tipranks/3902025/analysts-conflicted-on-these-technology-names-bill-com-holdings-bill-workday-wday-and-monday-com-mndy/"
+    },
+    {
+      "available_at": "2026-08-14T13:40:34+00:00",
+      "concise_rationale": "analyst_action: Unlocking Q4 Potential of BILL Holdings (BILL): Exploring Wall Street Estimates for Key Metrics",
+      "confidence": 0.8736598000000001,
+      "entities": [
+        "BILL",
+        "COIN"
+      ],
+      "expected_direction": 0.069970875,
+      "headline": "Unlocking Q4 Potential of BILL Holdings (BILL): Exploring Wall Street Estimates for Key Metrics",
+      "materiality": 1.0,
+      "novelty": 0.7022058823529411,
+      "published_at": "2026-08-14T13:40:34+00:00",
+      "relation": "company",
+      "relevance": 0.968299,
+      "sentiment": 0.0932945,
+      "source": "Yahoo Finance",
+      "source_id": "0ceb1ee273834a50dd769911",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://finance.yahoo.com/markets/stocks/articles/unlocking-q4-potential-bill-holdings-131503244.html"
+    }
+  ],
+  "selected_peer_news": [],
+  "selected_sector_news": [],
+  "ticker": "BILL"
+}

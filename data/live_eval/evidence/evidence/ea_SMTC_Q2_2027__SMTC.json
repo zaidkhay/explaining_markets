@@ -1,0 +1,384 @@
+{
+  "company_history_summary": {
+    "mean_prior_earnings_abnormal_return": 0.0,
+    "mean_prior_eps_surprise": 0.0,
+    "mean_prior_revenue_surprise": 0.0,
+    "prior_earnings_count": 0.0,
+    "similar_earnings_event_mean_reaction": 0.0,
+    "similar_eps_surprise_mean_reaction": 0.0,
+    "similar_event_count": 0.0,
+    "similar_revenue_surprise_mean_reaction": 0.0
+  },
+  "created_at": "2026-08-25T23:01:20.168161+00:00",
+  "cutoff": "2026-08-25T20:30:00+00:00",
+  "earnings": {
+    "abnormal_return": null,
+    "available_at": "2026-08-25T20:30:00+00:00",
+    "consensus_eps": 58.3,
+    "consensus_revenue": 50.0,
+    "event_id": null,
+    "reported_eps": 63.9,
+    "reported_revenue": 1600000000000.0,
+    "retrieved_at": "2026-08-25T20:30:00+00:00",
+    "source": "disclosure_results_v1",
+    "ticker": "SMTC",
+    "value_timestamp": "2026-08-25T20:30:00+00:00"
+  },
+  "event_id": "ea_SMTC_Q2_2027",
+  "feature_availability": {
+    "company_history": 0.0,
+    "company_news": 1.0,
+    "eps": 1.0,
+    "guidance": 0.0,
+    "guidance_consensus": 0.0,
+    "peer_news": 0.0,
+    "peers": 0.0,
+    "price_5y": 0.0,
+    "reasoning": 1.0,
+    "revenue": 1.0,
+    "sector_news": 0.0
+  },
+  "feature_spec_version": "v3.2-disclosure-results",
+  "guidance": null,
+  "model_version": "v3_lite_operator_2026_08_19",
+  "peer_summary": {
+    "peer_abnormal_return_1d": 0.0,
+    "peer_dispersion_1d": 0.0,
+    "peer_dispersion_5d": 0.0,
+    "peer_material_news_flag": 0.0,
+    "peer_mean_return_1d": 0.0,
+    "peer_mean_return_20d": 0.0,
+    "peer_mean_return_5d": 0.0,
+    "peer_negative_news_score": 0.0,
+    "peer_news_count_24h": 0.0,
+    "peer_positive_news_score": 0.0,
+    "recent_peer_earnings_count": 0.0,
+    "recent_peer_eps_surprise_mean": 0.0,
+    "recent_peer_guidance_signal_mean": 0.0,
+    "recent_peer_post_earnings_abnormal_return_mean": 0.0,
+    "recent_peer_revenue_surprise_mean": 0.0
+  },
+  "prediction": 0.99,
+  "price_context": {
+    "distance_from_20d_high": 0.0,
+    "distance_from_20d_low": 0.0,
+    "distance_from_52w_high": 0.0,
+    "distance_from_52w_low": 0.0,
+    "realized_volatility_20d": 0.0,
+    "realized_volatility_252d": 0.0,
+    "realized_volatility_60d": 0.0,
+    "return_120d": 0.0,
+    "return_1d_pre_event": 0.0,
+    "return_20d": 0.0,
+    "return_252d": 0.0,
+    "return_3y": 0.0,
+    "return_5d": 0.0,
+    "return_5y": 0.0,
+    "return_60d": 0.0
+  },
+  "provider_receipts": [
+    {
+      "count": 0,
+      "provider_call": "earnings.current",
+      "retrieved_at": "2026-08-25T23:01:19.798456+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "guidance.current",
+      "retrieved_at": "2026-08-25T23:01:19.798476+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 2,
+      "matched_fields": [
+        "eps",
+        "revenue"
+      ],
+      "parser_version": "disclosure_results_v1",
+      "provider_call": "event_disclosure.results",
+      "retrieved_at": "2026-08-25T23:01:19.799222+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "metadata",
+      "retrieved_at": "2026-08-25T23:01:19.799228+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 0,
+      "provider_call": "peers",
+      "retrieved_at": "2026-08-25T23:01:19.799237+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 18,
+      "provider_call": "news.company",
+      "retrieved_at": "2026-08-25T23:01:19.799254+00:00",
+      "status": "ok"
+    },
+    {
+      "count": 18,
+      "kind": "company_news",
+      "retrieved_at": "2026-08-25T23:01:19.799259+00:00",
+      "status": "ok"
+    }
+  ],
+  "reasoning": {
+    "company_news_signal": 0.19620312868556103,
+    "concise_rationale": "EPS=+0.77, revenue=+1.00, guidance=+0.00; priced-in=-0.00, company-news=+0.20, peers=+0.00, sector=+0.00, contradiction=0.00.",
+    "confidence": 0.6110890520000001,
+    "contradiction_score": 0.0,
+    "cutoff": "2026-08-25T20:30:00+00:00",
+    "earnings_quality": 0.7684391080617498,
+    "expectations_gap": 0.5957975986277875,
+    "guidance_quality": 0.0,
+    "historical_analogy_signal": 0.0,
+    "materiality": 1.0,
+    "overall_event_signal": 0.34501396638485116,
+    "peer_signal": 0.0,
+    "priced_in_score": -0.0,
+    "revenue_quality": 1.0,
+    "sector_signal": 0.0,
+    "source_ids": [
+      "8e07d523a6d80f1e84c2b9b4",
+      "a8899278e4f4a0d56f1e4aee",
+      "e61b7379d204297d325fd47f",
+      "182a78e243c5b8fdeaf68f6b",
+      "fcc590376ecadb21c0b2b8ed",
+      "7401513e2aa5714377884ee2",
+      "e1934e78ecd4cdca82ca2880",
+      "41041292fa56aab4dbba0cd3",
+      "f34ad57f349f46978c6f2358",
+      "298d0059adf88001eb628a88"
+    ]
+  },
+  "selected_company_news": [
+    {
+      "available_at": "2026-08-25T07:42:17+00:00",
+      "concise_rationale": "M&A: 542,011 Shares in Semtech Corporation $SMTC Purchased by Bank of New York Mellon Corp",
+      "confidence": 0.847,
+      "entities": [
+        "SMTC",
+        "BK"
+      ],
+      "expected_direction": 0.1744543125,
+      "headline": "542,011 Shares in Semtech Corporation $SMTC Purchased by Bank of New York Mellon Corp",
+      "materiality": 0.78,
+      "novelty": 1.0,
+      "published_at": "2026-08-25T07:42:17+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.23260575,
+      "source": "MarketBeat",
+      "source_id": "8e07d523a6d80f1e84c2b9b4",
+      "source_quality": 0.6,
+      "topic": "M&A",
+      "url": "https://www.marketbeat.com/instant-alerts/filing-542011-shares-in-semtech-corporation-smtc-purchased-by-bank-of-new-york-mellon-corp-2026-08-25/"
+    },
+    {
+      "available_at": "2026-08-24T16:14:21+00:00",
+      "concise_rationale": "pricing: Micron, Seagate, Western Digital, Semtech, and Penguin Solutions Shares Are Falling, What You Need To Know",
+      "confidence": 0.847,
+      "entities": [
+        "SMTC",
+        "MU",
+        "STX",
+        "WDC",
+        "AMD"
+      ],
+      "expected_direction": -0.09863685000000001,
+      "headline": "Micron, Seagate, Western Digital, Semtech, and Penguin Solutions Shares Are Falling, What You Need To Know",
+      "materiality": 0.78,
+      "novelty": 0.7081081081081081,
+      "published_at": "2026-08-24T16:14:21+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": -0.13151580000000002,
+      "source": "The Globe and Mail",
+      "source_id": "a8899278e4f4a0d56f1e4aee",
+      "source_quality": 0.6,
+      "topic": "pricing",
+      "url": "https://www.theglobeandmail.com/investing/markets/stocks/WDC/pressreleases/4005715/micron-seagate-western-digital-semtech-and-penguin-solutions-shares-are-falling-what-you-need-to-know/"
+    },
+    {
+      "available_at": "2026-08-23T22:16:00+00:00",
+      "concise_rationale": "analyst_action: Earnings To Watch: Semtech (SMTC) Reports Q2 Results Tomorrow",
+      "confidence": 0.871,
+      "entities": [
+        "SMTC",
+        "KLAC"
+      ],
+      "expected_direction": 0.09910777500000001,
+      "headline": "Earnings To Watch: Semtech (SMTC) Reports Q2 Results Tomorrow",
+      "materiality": 0.94,
+      "novelty": 0.6470588235294118,
+      "published_at": "2026-08-23T22:16:00+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.1321437,
+      "source": "Yahoo! Finance Canada",
+      "source_id": "e61b7379d204297d325fd47f",
+      "source_quality": 0.6,
+      "topic": "analyst_action",
+      "url": "https://ca.finance.yahoo.com/news/earnings-watch-semtech-smtc-reports-031659642.html"
+    },
+    {
+      "available_at": "2026-08-23T23:14:21+00:00",
+      "concise_rationale": "capital_raise: ETFs Investing in Semtech Corporation Stocks",
+      "confidence": 0.871,
+      "entities": [
+        "SMTC"
+      ],
+      "expected_direction": 0.06503737500000001,
+      "headline": "ETFs Investing in Semtech Corporation Stocks",
+      "materiality": 0.94,
+      "novelty": 0.5048543689320388,
+      "published_at": "2026-08-23T23:14:21+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.0867165,
+      "source": "TradingView",
+      "source_id": "182a78e243c5b8fdeaf68f6b",
+      "source_quality": 0.6,
+      "topic": "capital_raise",
+      "url": "https://www.tradingview.com/symbols/DUS-SM2/etfs/"
+    },
+    {
+      "available_at": "2026-08-24T08:44:36+00:00",
+      "concise_rationale": "M&A: E20 Capital Ltd Buys New Shares in Semtech Corporation $SMTC",
+      "confidence": 0.8130000000000001,
+      "entities": [
+        "SMTC"
+      ],
+      "expected_direction": 0.013909350000000001,
+      "headline": "E20 Capital Ltd Buys New Shares in Semtech Corporation $SMTC",
+      "materiality": 0.78,
+      "novelty": 0.6118881118881119,
+      "published_at": "2026-08-24T08:44:36+00:00",
+      "relation": "company",
+      "relevance": 0.83,
+      "sentiment": 0.0185458,
+      "source": "MarketBeat",
+      "source_id": "fcc590376ecadb21c0b2b8ed",
+      "source_quality": 0.6,
+      "topic": "M&A",
+      "url": "https://www.marketbeat.com/instant-alerts/filing-e20-capital-ltd-buys-new-shares-in-semtech-corporation-smtc-2026-08-24/"
+    },
+    {
+      "available_at": "2026-08-22T10:42:17+00:00",
+      "concise_rationale": "guidance: BMO Capital initiates Semtech stock at Outperform, sets target $155",
+      "confidence": 0.8370000000000001,
+      "entities": [
+        "SMTC"
+      ],
+      "expected_direction": 0.5176046125,
+      "headline": "BMO Capital initiates Semtech stock at Outperform, sets target $155",
+      "materiality": 0.94,
+      "novelty": 0.6707317073170731,
+      "published_at": "2026-08-22T10:42:17+00:00",
+      "relation": "company",
+      "relevance": 0.83,
+      "sentiment": 0.35680615,
+      "source": "Investing.com",
+      "source_id": "7401513e2aa5714377884ee2",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://www.investing.com/news/analyst-ratings/bmo-capital-initiates-semtech-stock-at-outperform-sets-target-155-93CH-4871292"
+    },
+    {
+      "available_at": "2026-08-22T03:53:00+00:00",
+      "concise_rationale": "other: Stocks making big moves this week: Bally's, Adobe, Novavax, Semtech, and STAAR Surgical",
+      "confidence": 0.847,
+      "entities": [
+        "SMTC",
+        "ADBE"
+      ],
+      "expected_direction": 0.1641276,
+      "headline": "Stocks making big moves this week: Bally's, Adobe, Novavax, Semtech, and STAAR Surgical",
+      "materiality": 0.78,
+      "novelty": 0.7261904761904763,
+      "published_at": "2026-08-22T03:53:00+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.21883680000000003,
+      "source": "Yahoo Finance",
+      "source_id": "e1934e78ecd4cdca82ca2880",
+      "source_quality": 0.6,
+      "topic": "other",
+      "url": "https://finance.yahoo.com/markets/stocks/articles/stocks-making-big-moves-week-075339221.html"
+    },
+    {
+      "available_at": "2026-08-21T14:10:02+00:00",
+      "concise_rationale": "product_launch: SMTC Set to Report Q2 Earnings: What's in the Cards for the Stock?",
+      "confidence": 0.8704526,
+      "entities": [
+        "SMTC",
+        "DELL",
+        "HPE",
+        "INTU"
+      ],
+      "expected_direction": 0.6496391125,
+      "headline": "SMTC Set to Report Q2 Earnings: What's in the Cards for the Stock?",
+      "materiality": 0.94,
+      "novelty": 0.7222222222222222,
+      "published_at": "2026-08-21T14:10:02+00:00",
+      "relation": "company",
+      "relevance": 0.997263,
+      "sentiment": 0.53285215,
+      "source": "Yahoo Finance Australia",
+      "source_id": "41041292fa56aab4dbba0cd3",
+      "source_quality": 0.6,
+      "topic": "product_launch",
+      "url": "https://au.finance.yahoo.com/news/smtc-set-report-q2-earnings-134200063.html"
+    },
+    {
+      "available_at": "2026-08-21T09:13:36+00:00",
+      "concise_rationale": "guidance: Benchmark reiterates Semtech stock rating ahead of earnings",
+      "confidence": 0.88,
+      "entities": [
+        "SMTC"
+      ],
+      "expected_direction": 0.2297748375,
+      "headline": "Benchmark reiterates Semtech stock rating ahead of earnings",
+      "materiality": 1.0,
+      "novelty": 0.5887096774193549,
+      "published_at": "2026-08-21T09:13:36+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.30636645,
+      "source": "Investing.com",
+      "source_id": "f34ad57f349f46978c6f2358",
+      "source_quality": 0.6,
+      "topic": "guidance",
+      "url": "https://www.investing.com/news/analyst-ratings/benchmark-reiterates-semtech-stock-rating-ahead-of-earnings-93CH-4870006"
+    },
+    {
+      "available_at": "2026-08-20T10:41:07+00:00",
+      "concise_rationale": "M&A: 33,630 Shares in Semtech Corporation $SMTC Acquired by Lisanti Capital Growth LLC",
+      "confidence": 0.871,
+      "entities": [
+        "SMTC",
+        "BLK",
+        "AMP"
+      ],
+      "expected_direction": 0.0786547125,
+      "headline": "33,630 Shares in Semtech Corporation $SMTC Acquired by Lisanti Capital Growth LLC",
+      "materiality": 0.94,
+      "novelty": 0.5426829268292683,
+      "published_at": "2026-08-20T10:41:07+00:00",
+      "relation": "company",
+      "relevance": 1.0,
+      "sentiment": 0.10487294999999999,
+      "source": "MarketBeat",
+      "source_id": "298d0059adf88001eb628a88",
+      "source_quality": 0.6,
+      "topic": "M&A",
+      "url": "https://www.marketbeat.com/instant-alerts/filing-33630-shares-in-semtech-corporation-smtc-acquired-by-lisanti-capital-growth-llc-2026-08-20/"
+    }
+  ],
+  "selected_peer_news": [],
+  "selected_sector_news": [],
+  "ticker": "SMTC"
+}
