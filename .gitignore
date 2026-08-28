@@ -1,9 +1,5 @@
 # Secrets — never commit
 .env
-.env.example
-
-# Local-only dev/maintenance scripts
-scripts/
 
 # Python
 __pycache__/
@@ -25,21 +21,18 @@ venv/
 .idea/
 .DS_Store
 
+# Committed as a stray gitlink with no .gitmodules entry (fresh clones get
+# an empty dir git refuses to populate); not a submodule, plain ignore.
+examples/
+
 # Ignored md files
 HISTORICAL_DATA_INVESTIGATION.md
 
-# Local historical-data cache (populate separately; never commit bulk data)
-data/historical/*
-data/processed/*
-data/company_history/*
-data/evidence/*
-data/enrichment/*
-!data/historical/.gitkeep
-!data/historical/README.md
-!data/historical/PROVENANCE.json
-!data/processed/.gitkeep
-!data/processed/README.md
-!data/company_history/README.md
+# Bulk/local data (populate separately; never commit large data files)
+data/
+!data/**/README.md
+!data/**/PROVENANCE.json
+!data/**/.gitkeep
 
 # Derived from the sealed archive; regenerate with competition_history.write_snapshot.
 # Kept out of git (bulk archive-derived data) but still mounted into the Modal
