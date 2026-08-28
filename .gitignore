@@ -22,6 +22,10 @@ venv/
 .idea/
 .DS_Store
 
+# Committed as a stray gitlink with no .gitmodules entry (fresh clones get
+# an empty dir git refuses to populate); not a submodule, plain ignore.
+examples/
+
 # Ignored md files
 HISTORICAL_DATA_INVESTIGATION.md
 
