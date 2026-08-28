@@ -37,8 +37,12 @@ information the earnings-surprise benchmark does not already contain.*
 Violating any of these can silently destroy the validity of months of work. Several are
 irreversible.
 
-1. **Never read 2026Q3 targets.** It is the first honest untouched holdout. Reading it once —
-   even "just to check" — converts it permanently into another selection set. There is no undo.
+1. **2026Q3's status has not yet been decided — do not let a Q3 number influence a
+   specification choice until a human has explicitly recorded that decision.** Scoring
+   already-submitted, frozen predictions against Q3 outcomes is legitimate: those predictions
+   were fixed before the outcomes existed, so nothing leaks (this is what §7.3's 18-of-59 join
+   diagnostic does). Using a Q3 result to choose between model specifications, hyperparameters,
+   or features spends the holdout — that conversion has no undo. See §1.2.
 2. **Never evaluate an artifact on a quarter it was fit on.** This bug has already happened once
    in `compare_v3_lite_official_score.py`. See §1.3.
 3. **Never fit on the live events.** The recent live predictions are for attribution and failure
@@ -65,7 +69,7 @@ irreversible.
 | 2025Q4  | 1,849 | Training |
 | 2026Q1  | 2,390 | Validation / model selection |
 | 2026Q2  | 2,060 | Legacy chronological read — **NOT pristine** |
-| 2026Q3  | —     | **Untouched holdout — do not read targets** |
+| 2026Q3  | —     | **Status undecided — see §1.2** |
 
 Total historical: 6,299 event rows, ~2,607 unique tickers.
 
@@ -79,9 +83,16 @@ Total historical: 6,299 event rows, ~2,607 unique tickers.
 - **2026Q2** — chronological but already inspected during prior research. Useful as a
   directional sanity check. Not admissible as confirmatory evidence. Always label it
   "non-pristine" in any writeup.
-- **2026Q3** — nothing. Do not compute percentiles on it, do not join it to predictions, do not
-  peek at CAR1 distributions. If a script needs a quarter argument, do not pass `2026Q3` unless
-  a human has explicitly declared the holdout spent.
+- **2026Q3** — status not yet decided. The actual distinction is what the number is *used for*,
+  not whether it's read:
+  - Scoring already-submitted, frozen predictions against Q3 outcomes is legitimate. Those
+    predictions were frozen before the outcomes existed, so nothing leaks — this is exactly
+    what §7.3's join diagnostic and the worked example in §2.4 do.
+  - Using a Q3 result to choose between model specifications, hyperparameters, or features
+    spends the holdout. **A human must explicitly record that decision before any Q3 number is
+    allowed to influence a specification choice.** That recording has not happened yet — until
+    it does, treat Q3 as closed for selection purposes even though scoring frozen predictions
+    against it is fine.
 
 ### 1.3 The leakage bug that already happened
 
@@ -614,7 +625,9 @@ Do not report an improvement without stating what it was measured against and wh
 
 Before proposing any change, answer:
 
-- [ ] Does this read 2026Q3 in any way? → **stop**
+- [ ] Does this use a 2026Q3 number to choose between specifications, hyperparameters, or
+      features (rather than just scoring already-frozen predictions against it)? → **stop**,
+      see §0.1 / §1.2
 - [ ] Does it fit anything on live events? → **stop**
 - [ ] Does it evaluate an artifact on data that touched its fit? → **stop**
 - [ ] Does it weaken the point-in-time audit? → **stop**
