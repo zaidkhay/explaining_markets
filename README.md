@@ -2,7 +2,7 @@
 
 Production system for forecasting the next-day abnormal market reaction to corporate events as a within-quarter percentile.
 
-## Current production path
+## Current production pat
 
 ```text
 Explaining Markets webhook
