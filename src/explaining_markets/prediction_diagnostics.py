@@ -75,7 +75,7 @@ def feature_contributions(model: V3LiteCandidateModel, vector: FeatureVectorV3) 
 
     raw_unclipped = float(model.intercept + total)
     raw = float(max(model.clip_lower, min(model.clip_upper, raw_unclipped)))
-    submitted = float(model.calibrator.calibrate(raw))
+    submitted = float(model.submission_value(raw)) if hasattr(model, "submission_value") else float(model.calibrator.calibrate(raw))
     rows.sort(key=lambda row: abs(float(row["raw_score_contribution"])), reverse=True)
     return {
         "intercept": float(model.intercept),

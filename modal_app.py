@@ -178,6 +178,7 @@ def check_production():
         "operator_override": model.operator_override,
         "production_candidate": model.production_candidate,
         "promoted": model.promoted,
+        "submission": model.submission,
         "calibration": model.calibrator.version,
         "calibration_n_fitted": model.calibrator.n_fitted,
         "parser": model.disclosure_parser_version,

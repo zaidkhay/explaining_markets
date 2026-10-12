@@ -12,6 +12,9 @@ from explaining_markets.features_v3 import FEATURE_SPEC_VERSION_V3, FeatureVecto
 DEFAULT_V3_LITE_CANDIDATE_PATH = Path(__file__).with_name("artifacts") / "v3_lite_candidate.json"
 
 
+SUBMISSION_MODES = ("calibrated", "raw_clipped")
+
+
 class V3LiteCandidateModel:
     """Linear V3-lite model with OOS empirical-percentile calibration."""
 
@@ -36,6 +39,14 @@ class V3LiteCandidateModel:
         self.ablation = str(raw.get("ablation") or "unknown")
         self.training_metadata = dict(raw.get("training_metadata") or {})
         self.calibrator = PercentileCalibrator.from_dict(dict(raw["calibration"]))
+        # What production submits. "calibrated" (default) maps the clipped raw
+        # score through the calibrator; "raw_clipped" submits the clipped raw
+        # score itself. The calibrator is still loaded either way: it is the
+        # historical OOS reference distribution the live gate measures
+        # separation against (rank space), and diagnostics report it.
+        self.submission = str(raw.get("submission") or "calibrated")
+        if self.submission not in SUBMISSION_MODES:
+            raise ValueError(f"unknown V3-lite submission mode {self.submission!r}")
         self.last_raw_prediction: float | None = None
         self.last_calibrated_prediction: float | None = None
         self._validate_candidate()
@@ -88,16 +99,23 @@ class V3LiteCandidateModel:
             raise ValueError("V3-lite candidate produced a non-finite prediction")
         return float(max(self.clip_lower, min(self.clip_upper, prediction)))
 
+    def submission_value(self, raw: float) -> float:
+        """The value production submits for an already-clipped raw score."""
+        if self.submission == "raw_clipped":
+            return float(raw)
+        return self.calibrator.calibrate(raw)
+
     def predict_vector(self, vector: FeatureVectorV3) -> float:
         raw = self.predict_raw_vector(vector)
         calibrated = self.calibrator.calibrate(raw)
+        submitted = self.submission_value(raw)
         self.last_raw_prediction = raw
         self.last_calibrated_prediction = calibrated
         print(
             "[V3_LITE_MODEL] "
             f"model={self.model_version} ablation={self.ablation} "
-            f"raw={raw:.4f} submitted={calibrated:.4f} "
+            f"raw={raw:.4f} submitted={submitted:.4f} submission={self.submission} "
             f"calibration={self.calibrator.version} parser={self.disclosure_parser_version} "
             "operator_override=1"
         )
-        return calibrated
+        return submitted

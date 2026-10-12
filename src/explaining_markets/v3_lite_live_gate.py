@@ -7,9 +7,13 @@ negative/neutral/positive disclosure facts must survive parsing and produce
 strictly ordered, meaningfully separated submitted percentiles even when the
 legacy FLS block is zero.
 
-Because the production calibration is an empirical percentile transform, a
-fixed adjacent-percentile floor is arbitrary and depends on validation sample
-size. By default we therefore require each adjacent scenario to be separated
+Separation is measured in rank space: each scenario's clipped raw score is
+mapped through the artifact's historical OOS calibration distribution. That
+keeps the gate equally strict whether production submits calibrated or raw
+clipped scores (``submission`` in the artifact) -- the question is always
+"how many historical OOS predictions lie between these scenarios", never the
+scale of the submitted value. A fixed adjacent-percentile floor is arbitrary
+and depends on validation sample size. By default we therefore require each adjacent scenario to be separated
 by at least ``min_adjacent_rank_steps`` historical OOS calibration ranks.
 An explicit percentile-gap override remains available for diagnostics.
 
@@ -54,6 +58,7 @@ class LiveGateScenario:
     fls_nonzero: int
     has_eps_surprise: float
     has_revenue_surprise: float
+    rank: float = 0.0  # position in the historical OOS distribution (gate units)
 
 
 @dataclass(frozen=True)
@@ -133,7 +138,9 @@ def evaluate_v3_lite_live_gate(
         final = replace(base, event_reasoning=reasoning)
         vector = build_feature_vector_v3(disclosure=disclosure, context=final)
         raw = model.predict_raw_vector(vector)
-        submitted = model.calibrator.calibrate(raw)
+        rank = model.calibrator.calibrate(raw)
+        submission_value = getattr(model, "submission_value", None)
+        submitted = submission_value(raw) if submission_value else rank
         scenarios.append(
             LiveGateScenario(
                 label=label,
@@ -143,6 +150,7 @@ def evaluate_v3_lite_live_gate(
                 revenue_quality=float(reasoning.revenue_quality),
                 raw=float(raw),
                 submitted=float(submitted),
+                rank=float(rank),
                 fls_nonzero=sum(abs(x) > 1e-12 for x in vector.fls.values.values()),
                 has_eps_surprise=float(vector.values["has_eps_surprise"]),
                 has_revenue_surprise=float(vector.values["has_revenue_surprise"]),
@@ -157,10 +165,12 @@ def evaluate_v3_lite_live_gate(
     ordered = (
         scenarios[0].raw < scenarios[1].raw < scenarios[2].raw
         and scenarios[0].submitted < scenarios[1].submitted < scenarios[2].submitted
+        and scenarios[0].rank < scenarios[1].rank < scenarios[2].rank
     )
-    negative_neutral_gap = scenarios[1].submitted - scenarios[0].submitted
-    neutral_positive_gap = scenarios[2].submitted - scenarios[1].submitted
-    spread = scenarios[2].submitted - scenarios[0].submitted
+    # Gaps and spread are in rank space (see module docstring).
+    negative_neutral_gap = scenarios[1].rank - scenarios[0].rank
+    neutral_positive_gap = scenarios[2].rank - scenarios[1].rank
+    spread = scenarios[2].rank - scenarios[0].rank
     adjacent_floor, n_fitted = _adjacent_gap_floor(
         model,
         explicit_gap=min_adjacent_submitted_gap,
