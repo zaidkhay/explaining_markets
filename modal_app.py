@@ -3,6 +3,11 @@
 Deploy:      uv run modal deploy modal_app.py
 Feed check:  uv run modal run modal_app.py::check_v3_feed --ticker AAPL
 Prod check:  uv run modal run modal_app.py::check_production
+
+Routes: the original submission is served at POST / (and /competition/webhook)
+with EM_API_KEY / EM_WEBHOOK_SECRET. Up to four more submissions are served at
+POST /s/<n> (n = 2..5) with EM_API_KEY_S<n> / EM_WEBHOOK_SECRET_S<n>. Every
+route runs the same model; only the credentials differ.
 """
 
 import modal
@@ -32,6 +37,14 @@ async def _claim_aio(webhook_id):
     return await seen_webhooks.put.aio(webhook_id, "in_flight", skip_if_exists=True)
 
 
+def _dedupe_key(webhook_id, slot):
+    """Namespace claims per slot so two submissions never share a claim.
+    The original submission keeps its bare key, unchanged from before slots."""
+    if not webhook_id or slot is None:
+        return webhook_id
+    return f"s{slot}:{webhook_id}"
+
+
 def _release(webhook_id, submitted):
     if not webhook_id:
         return
@@ -42,7 +55,7 @@ def _release(webhook_id, submitted):
 
 
 @app.function(image=image, secrets=secrets, volumes={"/v3-data": v3_data}, timeout=600, retries=0)
-def predict_and_submit(event: dict, webhook_id: str | None = None):
+def predict_and_submit(event: dict, webhook_id: str | None = None, slot: int | None = None):
     import os
 
     os.environ.setdefault("V3_HISTORY_CACHE_PATH", "/v3-data/company_history.sqlite")
@@ -59,11 +72,11 @@ def predict_and_submit(event: dict, webhook_id: str | None = None):
         submit_predictions(
             event_id=event["event_id"],
             predictions=predictions,
-            config=Config.from_env(),
+            config=Config.from_env(slot),
         )
         submitted = True
     except Exception as exc:
-        print(f"[ERROR] prediction failed for event {event.get('event_id')}: {exc}")
+        print(f"[ERROR] slot={slot or 1} prediction failed for event {event.get('event_id')}: {exc}")
     finally:
         _release(webhook_id, submitted)
 
@@ -117,6 +130,7 @@ def check_production():
     os.environ.setdefault("V3_HISTORY_CACHE_PATH", "/v3-data/company_history.sqlite")
     os.environ.setdefault("V3_EVIDENCE_DIR", "/v3-data/evidence")
 
+    from explaining_markets.config import configured_slots
     from explaining_markets.model import get_default_model
     from explaining_markets.model_v3_lite import V3LiteCandidateModel
     from explaining_markets.v3_lite_live_gate import evaluate_v3_lite_live_gate
@@ -164,6 +178,7 @@ def check_production():
         "openrouter_live_enabled": os.getenv("V3_LIVE_USE_OPENROUTER", "0"),
         "em_api_configured": bool(os.getenv("EM_API_KEY")),
         "webhook_secret_configured": bool(os.getenv("EM_WEBHOOK_SECRET")),
+        "slots_configured": ",".join(str(slot) for slot in configured_slots()) or "none",
     }
     print("[PROD_MODAL_DIAGNOSTIC] " + " ".join(f"{key}={value}" for key, value in result.items()))
     return result
@@ -175,7 +190,7 @@ def web():
     from fastapi import FastAPI, Request, Response
 
     from explaining_markets import WebhookVerificationError, verify_webhook
-    from explaining_markets.config import Config
+    from explaining_markets.config import EXTRA_SLOTS, Config, configured_slots
     from explaining_markets.event_utils import log_deadline
 
     api = FastAPI(title="Explaining Markets")
@@ -187,7 +202,16 @@ def web():
     @api.post("/")
     @api.post("/competition/webhook")
     async def competition_webhook(request: Request) -> Response:
-        config = Config.from_env()
+        return await _handle(request, slot=None)
+
+    @api.post("/s/{slot}")
+    async def slot_webhook(slot: int, request: Request) -> Response:
+        if slot not in EXTRA_SLOTS or slot not in configured_slots():
+            return Response(content="submission slot not configured", status_code=404)
+        return await _handle(request, slot=slot)
+
+    async def _handle(request: Request, slot: int | None) -> Response:
+        config = Config.from_env(slot)
         raw_body = await request.body()
         try:
             event = verify_webhook(
@@ -198,12 +222,12 @@ def web():
         except WebhookVerificationError as exc:
             return Response(content=str(exc), status_code=401)
 
-        webhook_id = event.get("id")
+        webhook_id = _dedupe_key(event.get("id"), slot)
         if not await _claim_aio(webhook_id):
             return Response(status_code=200)
 
         log_deadline(event)
-        await predict_and_submit.spawn.aio(event, webhook_id)
+        await predict_and_submit.spawn.aio(event, webhook_id, slot)
         return Response(status_code=200)
 
     return api

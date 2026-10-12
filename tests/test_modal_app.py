@@ -122,9 +122,10 @@ def test_signed_event_acks_and_spawns_the_work(client, spawned) -> None:
     assert resp.status_code == 200
     # The route did not predict inline — it handed off exactly one job.
     assert len(spawned) == 1
-    event, webhook_id = spawned[0]
+    event, webhook_id, slot = spawned[0]
     assert event["event_id"] == "test_abc"
     assert webhook_id == "evt_test_abc"
+    assert slot is None
     assert modal_app.seen_webhooks.data["evt_test_abc"] == "in_flight"
 
 
@@ -202,3 +203,112 @@ def test_worker_submits_and_marks_done(monkeypatch) -> None:
     fake.put("evt_test_def", "in_flight")
     worker(_test_event("evt_test_def"), "evt_test_def")
     assert "evt_test_def" not in fake.data
+
+
+# --- Additional submission slots (/s/2 .. /s/5) -------------------------------
+
+SLOT_SECRET = "whsec_" + base64.urlsafe_b64encode(b"s" * 32).decode().rstrip("=")
+
+
+def _signed_with(secret: str, payload: dict) -> tuple[bytes, dict]:
+    raw_body = json.dumps(payload).encode()
+    ts = int(time.time())
+    key = base64.urlsafe_b64decode(secret[len("whsec_"):] + "==")
+    signed = f"{payload['id']}.{ts}.".encode() + raw_body
+    signature = "v1," + base64.b64encode(hmac.new(key, signed, sha256).digest()).decode()
+    return raw_body, {
+        "webhook-id": payload["id"],
+        "webhook-timestamp": str(ts),
+        "webhook-signature": signature,
+    }
+
+
+@pytest.fixture
+def slot_client(monkeypatch, client):
+    for slot in (2, 3):
+        monkeypatch.setenv(f"EM_API_KEY_S{slot}", f"key-s{slot}")
+        monkeypatch.setenv(f"EM_WEBHOOK_SECRET_S{slot}", SLOT_SECRET)
+    for slot in (4, 5):
+        monkeypatch.delenv(f"EM_API_KEY_S{slot}", raising=False)
+        monkeypatch.delenv(f"EM_WEBHOOK_SECRET_S{slot}", raising=False)
+    return client
+
+
+def test_unconfigured_or_unknown_slot_is_404(slot_client, spawned) -> None:
+    for path in ("/s/1", "/s/4", "/s/5", "/s/6", "/s/0"):
+        assert slot_client.post(path, content=b"{}").status_code == 404, path
+    assert spawned == []
+
+
+def test_slot_with_only_one_credential_is_404(slot_client, spawned, monkeypatch) -> None:
+    monkeypatch.setenv("EM_API_KEY_S4", "key-s4")
+    assert slot_client.post("/s/4", content=b"{}").status_code == 404
+    assert spawned == []
+
+
+def test_unsigned_post_to_configured_slot_is_401(slot_client, spawned) -> None:
+    assert slot_client.post("/s/2", content=b"{}").status_code == 401
+    assert spawned == []
+
+
+def test_slot_rejects_the_legacy_secret(slot_client, spawned) -> None:
+    raw_body, headers = _signed(_test_event())
+    assert slot_client.post("/s/2", content=raw_body, headers=headers).status_code == 401
+    assert spawned == []
+
+
+def test_legacy_route_rejects_a_slot_secret(slot_client, spawned) -> None:
+    raw_body, headers = _signed_with(SLOT_SECRET, _test_event())
+    assert slot_client.post("/", content=raw_body, headers=headers).status_code == 401
+    assert spawned == []
+
+
+def test_signed_slot_event_acks_and_spawns_with_its_slot(slot_client, spawned) -> None:
+    raw_body, headers = _signed_with(SLOT_SECRET, _test_event())
+    assert slot_client.post("/s/3", content=raw_body, headers=headers).status_code == 200
+    assert len(spawned) == 1
+    event, webhook_id, slot = spawned[0]
+    assert event["event_id"] == "test_abc"
+    assert webhook_id == "s3:evt_test_abc"
+    assert slot == 3
+
+
+def test_slot_claims_are_independent(slot_client, spawned) -> None:
+    """The same delivery id on two slots (or legacy) is two submissions, not a
+    duplicate -- each must spawn its own job. Redelivery to one slot is still
+    deduped."""
+    legacy_body, legacy_headers = _signed(_test_event())
+    slot_body, slot_headers = _signed_with(SLOT_SECRET, _test_event())
+    assert slot_client.post("/", content=legacy_body, headers=legacy_headers).status_code == 200
+    assert slot_client.post("/s/2", content=slot_body, headers=slot_headers).status_code == 200
+    assert slot_client.post("/s/3", content=slot_body, headers=slot_headers).status_code == 200
+    assert slot_client.post("/s/3", content=slot_body, headers=slot_headers).status_code == 200
+    assert [call[1:] for call in spawned] == [
+        ("evt_test_abc", None),
+        ("s2:evt_test_abc", 2),
+        ("s3:evt_test_abc", 3),
+    ]
+
+
+def test_slot_worker_submits_with_that_slots_api_key(monkeypatch) -> None:
+    monkeypatch.setenv("EM_API_KEY", "legacy-key")
+    monkeypatch.setenv("EM_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("EM_API_KEY_S5", "key-s5")
+    monkeypatch.setenv("EM_WEBHOOK_SECRET_S5", SLOT_SECRET)
+    fake = FakeDict()
+    monkeypatch.setattr(modal_app, "seen_webhooks", fake)
+
+    used_keys: list[str] = []
+    import explaining_markets.client as client_mod
+
+    monkeypatch.setattr(
+        client_mod,
+        "submit_predictions",
+        lambda *, event_id, predictions, config: used_keys.append(config.api_key),
+    )
+    worker = modal_app.predict_and_submit.get_raw_f()
+    fake.put("s5:evt_test_abc", "in_flight")
+    worker(_test_event(), "s5:evt_test_abc", 5)
+    worker(_test_event("evt_legacy"), "evt_legacy")
+    assert used_keys == ["key-s5", "legacy-key"]
+    assert fake.data["s5:evt_test_abc"] == "done"
