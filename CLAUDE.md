@@ -452,6 +452,9 @@ calibration   : calibration_v1
 promoted           : False
 operator_override  : True
 production_candidate : True
+submissions   : original (POST /) + slots 2-5 (POST /s/<n>), same model
+failure path  : model exception -> neutral 0.5 per asset, logged [FALLBACK]
+submit retry  : 3 attempts on timeout / connect error / 429 / 5xx only
 ```
 
 `promoted = False` is accurate and load-bearing. The normal untouched-holdout promotion gate was

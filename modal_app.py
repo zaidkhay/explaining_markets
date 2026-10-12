@@ -61,22 +61,34 @@ def predict_and_submit(event: dict, webhook_id: str | None = None, slot: int | N
     os.environ.setdefault("V3_HISTORY_CACHE_PATH", "/v3-data/company_history.sqlite")
     os.environ.setdefault("V3_EVIDENCE_DIR", "/v3-data/evidence")
 
-    from explaining_markets.client import submit_predictions
+    from explaining_markets.client import submit_predictions_with_retry
     from explaining_markets.config import Config
     from explaining_markets.event_utils import is_test, neutral_predictions
     from predict import predict
 
+    # Always submit something (CLAUDE.md §8.3): a model failure degrades to a
+    # neutral 0.5 per focal asset and logs loudly; it never skips submission.
     submitted = False
     try:
-        predictions = neutral_predictions(event) if is_test(event) else predict(event)
-        submit_predictions(
+        if is_test(event):
+            predictions = neutral_predictions(event)
+        else:
+            try:
+                predictions = predict(event)
+            except Exception as exc:
+                print(
+                    f"[FALLBACK] slot={slot or 1} event={event.get('event_id')} "
+                    f"model failed ({type(exc).__name__}: {exc}); submitting neutral 0.5"
+                )
+                predictions = neutral_predictions(event)
+        submit_predictions_with_retry(
             event_id=event["event_id"],
             predictions=predictions,
             config=Config.from_env(slot),
         )
         submitted = True
     except Exception as exc:
-        print(f"[ERROR] slot={slot or 1} prediction failed for event {event.get('event_id')}: {exc}")
+        print(f"[ERROR] slot={slot or 1} submission failed for event {event.get('event_id')}: {exc}")
     finally:
         _release(webhook_id, submitted)
 

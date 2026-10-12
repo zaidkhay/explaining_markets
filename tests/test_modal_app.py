@@ -312,3 +312,91 @@ def test_slot_worker_submits_with_that_slots_api_key(monkeypatch) -> None:
     worker(_test_event("evt_legacy"), "evt_legacy")
     assert used_keys == ["key-s5", "legacy-key"]
     assert fake.data["s5:evt_test_abc"] == "done"
+
+
+# --- Always submit (neutral fallback) ------------------------------------------
+
+def _live_event(webhook_id: str = "evt_live") -> dict:
+    return {
+        "id": webhook_id,
+        "event_id": "live_1",
+        "event_type": "EARNINGS_RELEASE",
+        "focal_assets": [
+            {"identifier_type": "TICKER", "identifier_value": "AAA"},
+            {"identifier_type": "TICKER", "identifier_value": "BBB"},
+        ],
+    }
+
+
+def _capture_submissions(monkeypatch) -> list[dict]:
+    monkeypatch.setenv("EM_API_KEY", "test-key")
+    monkeypatch.setenv("EM_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setattr(modal_app, "seen_webhooks", FakeDict())
+    submitted: list[dict] = []
+    import explaining_markets.client as client_mod
+
+    monkeypatch.setattr(
+        client_mod,
+        "submit_predictions",
+        lambda *, event_id, predictions, config: submitted.append(
+            {"event_id": event_id, "predictions": predictions}
+        ),
+    )
+    return submitted
+
+
+def test_model_failure_submits_neutral_and_marks_done(monkeypatch) -> None:
+    submitted = _capture_submissions(monkeypatch)
+    import predict as predict_mod
+
+    def boom(event):
+        raise RuntimeError("artifact failed to load")
+
+    monkeypatch.setattr(predict_mod, "predict", boom)
+    modal_app.seen_webhooks.put("evt_live", "in_flight")
+    modal_app.predict_and_submit.get_raw_f()(_live_event(), "evt_live")
+
+    assert submitted == [
+        {
+            "event_id": "live_1",
+            "predictions": [
+                {"identifier_value": "AAA", "predicted_percentile": 0.5},
+                {"identifier_value": "BBB", "predicted_percentile": 0.5},
+            ],
+        }
+    ]
+    assert modal_app.seen_webhooks.data["evt_live"] == "done"
+
+
+def test_model_success_submits_model_output_unchanged(monkeypatch) -> None:
+    submitted = _capture_submissions(monkeypatch)
+    import predict as predict_mod
+
+    out = [{"identifier_value": "AAA", "predicted_percentile": 0.81}]
+    monkeypatch.setattr(predict_mod, "predict", lambda event: out)
+    modal_app.predict_and_submit.get_raw_f()(_live_event(), "evt_live")
+    assert submitted == [{"event_id": "live_1", "predictions": out}]
+
+
+def test_worker_retries_a_transient_submit_failure(monkeypatch) -> None:
+    monkeypatch.setenv("EM_API_KEY", "test-key")
+    monkeypatch.setenv("EM_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setattr(modal_app, "seen_webhooks", FakeDict())
+    import httpx
+
+    import explaining_markets.client as client_mod
+
+    monkeypatch.setattr(client_mod.time, "sleep", lambda s: None)
+    attempts: list[int] = []
+
+    def flaky(*, event_id, predictions, config):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise httpx.ReadTimeout("slow")
+        return {}
+
+    monkeypatch.setattr(client_mod, "submit_predictions", flaky)
+    modal_app.seen_webhooks.put("evt_test_abc", "in_flight")
+    modal_app.predict_and_submit.get_raw_f()(_test_event(), "evt_test_abc")
+    assert len(attempts) == 2
+    assert modal_app.seen_webhooks.data["evt_test_abc"] == "done"
