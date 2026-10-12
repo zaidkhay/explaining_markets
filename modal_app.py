@@ -2,7 +2,8 @@
 
 Deploy:      uv run modal deploy modal_app.py
 Feed check:  uv run modal run modal_app.py::check_v3_feed --ticker AAPL
-Prod check:  uv run modal run modal_app.py::check_production
+Prod check:  uv run python scripts/check_deployed.py   (checks the deployed app)
+             uv run modal run modal_app.py::check_production   (checks local files)
 
 Routes: the original submission is served at POST / (and /competition/webhook)
 with EM_API_KEY / EM_WEBHOOK_SECRET. Up to four more submissions are served at

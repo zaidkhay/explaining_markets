@@ -495,7 +495,10 @@ sign-inverted relationships from sparse, noisy data.
   deploying are separated by convention, not by branch topology.** The `(promotion)` tag and
   the §8.1 block are the entire audit trail. Treat them as load-bearing infrastructure.
 - Run `check_production` after every deploy and confirm it reports the expected model version,
-  ablation, alpha, and feature count. Paste the result into the promotion commit body.
+  ablation, alpha, and feature count. Paste the result into the promotion commit body. Use
+  `uv run python scripts/check_deployed.py`, which calls the **deployed** function.
+  `modal run modal_app.py::check_production` builds a temporary app from the local checkout,
+  so it validates local files, not necessarily what is deployed.
 - Verify against the live gates: negative / neutral / positive disclosure cases, parser checks,
   PIT checks, full test suite.
 - Baseline: **294 passed** (`uv run pytest`, full suite, as of 2026-10-11). A drop in count
@@ -706,6 +709,9 @@ uv run python scripts/sweep_v3_lite_official_candidates.py
 # Prediction attribution
 uv run python scripts/inspect_v3_prediction.py
 uv run python scripts/render_prediction_dashboard.py
+
+# Post-deploy check against the deployed app (not a local ephemeral copy)
+uv run python scripts/check_deployed.py
 
 # Promotion history — every time production changed
 git log --oneline --grep='(promotion)' --fixed-strings
