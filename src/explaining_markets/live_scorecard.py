@@ -383,12 +383,17 @@ def alarms(
     evidence: list[EvidenceRow],
     *,
     window: int = 10,
-    min_spread: float = 0.05,
+    min_spread: float = 0.01,
     repeat_window: int = 20,
     repeat_share: float = 0.25,
 ) -> list[Alarm]:
     """Checks for the failure class that does not raise (§9). Rows must be in
-    chronological order (load_evidence sorts them)."""
+    chronological order (load_evidence sorts them).
+
+    ``min_spread`` is on the submitted scale. Since 2026-10-12 production
+    submits clipped raw scores, whose historical OOS sd is ~0.044 (vs ~0.3
+    calibrated), so the floor is 0.01: well below normal raw dispersion, far
+    above the ~0 sd of the §9.1 constant-score failure."""
     found: list[Alarm] = []
     if not evidence:
         return [Alarm("warn", "no_evidence", "no evidence bundles found")]

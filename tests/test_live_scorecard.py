@@ -239,3 +239,11 @@ def test_disclosure_sanity(facts, broken) -> None:
 def test_broken_disclosure_raises_critical_alarm() -> None:
     rows = [_ev(disclosure=("1.0", "ea_AAA_Q3_2026"), submitted=0.3)]
     assert ("critical", "disclosure_sanity") in _codes(alarms(rows))
+
+
+def test_normal_raw_scale_dispersion_does_not_trip_low_spread() -> None:
+    """Raw clipped submissions have sd ~0.044; that is healthy, not a failure."""
+    rng = random.Random(5)
+    rows = [_ev(f"ea_T{i}_Q4_2026", f"T{i}", submitted=0.49 + rng.gauss(0, 0.044),
+                created=f"2026-10-{i + 1:02d}", schema="full") for i in range(12)]
+    assert "low_spread" not in {a.code for a in alarms(rows)}
