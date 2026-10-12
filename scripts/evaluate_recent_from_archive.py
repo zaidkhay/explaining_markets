@@ -28,6 +28,7 @@ from dotenv import load_dotenv
 
 from explaining_markets.competition_scoring import percentile_ranks, score_complete_predictions
 from explaining_markets.config import Config
+from explaining_markets.live_scorecard import load_evidence
 
 
 def _parse_dt(value) -> datetime | None:
@@ -93,25 +94,20 @@ def _outcome_rows(records: list[dict]) -> list[dict]:
 
 
 def _load_evidence(directory: Path) -> dict[tuple[str, str], dict]:
+    """Every evidence schema (legacy / summary / full), via the shared loader.
+
+    The previous inline loader required ``ticker`` and ``prediction`` fields,
+    which silently dropped the earliest bundles (they store
+    ``submitted_percentile`` and no ticker). See live_scorecard.parse_evidence.
+    """
     out: dict[tuple[str, str], dict] = {}
-    if not directory.exists():
-        return out
-    for path in directory.rglob("*.json"):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        event_id = str(payload.get("event_id") or "")
-        ticker = str(payload.get("ticker") or "").upper()
-        prediction = payload.get("prediction")
-        if not event_id or not ticker or prediction is None:
-            continue
-        out[(event_id, ticker)] = {
-            "predicted_percentile": float(prediction),
-            "evidence_path": str(path),
-            "model_version": payload.get("model_version"),
-            "cutoff": payload.get("cutoff"),
-            "feature_availability": payload.get("feature_availability") or {},
+    for row in load_evidence(directory):
+        out[(row.event_id, row.ticker)] = {
+            "predicted_percentile": row.submitted,
+            "evidence_path": row.path,
+            "model_version": row.model_version,
+            "cutoff": row.cutoff,
+            "feature_availability": row.feature_availability,
         }
     return out
 
