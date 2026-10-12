@@ -69,6 +69,7 @@ def predict_and_submit(event: dict, webhook_id: str | None = None, slot: int | N
     # Always submit something (CLAUDE.md §8.3): a model failure degrades to a
     # neutral 0.5 per focal asset and logs loudly; it never skips submission.
     submitted = False
+    source = "test_neutral" if is_test(event) else "model"
     try:
         if is_test(event):
             predictions = neutral_predictions(event)
@@ -81,12 +82,17 @@ def predict_and_submit(event: dict, webhook_id: str | None = None, slot: int | N
                     f"model failed ({type(exc).__name__}: {exc}); submitting neutral 0.5"
                 )
                 predictions = neutral_predictions(event)
+                source = "fallback_neutral"
         submit_predictions_with_retry(
             event_id=event["event_id"],
             predictions=predictions,
             config=Config.from_env(slot),
         )
         submitted = True
+        # Positive confirmation: without it a successful submit and a worker
+        # that never ran look identical in the logs (CLAUDE.md §9).
+        values = ",".join(f"{p['identifier_value']}={p['predicted_percentile']:.4f}" for p in predictions)
+        print(f"[SUBMIT] ok slot={slot or 1} event={event.get('event_id')} source={source} predictions={values or 'none'}")
     except Exception as exc:
         print(f"[ERROR] slot={slot or 1} submission failed for event {event.get('event_id')}: {exc}")
     finally:

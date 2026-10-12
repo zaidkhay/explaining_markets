@@ -400,3 +400,24 @@ def test_worker_retries_a_transient_submit_failure(monkeypatch) -> None:
     modal_app.predict_and_submit.get_raw_f()(_test_event(), "evt_test_abc")
     assert len(attempts) == 2
     assert modal_app.seen_webhooks.data["evt_test_abc"] == "done"
+
+
+def test_successful_submit_logs_a_positive_confirmation(monkeypatch, capsys) -> None:
+    _capture_submissions(monkeypatch)
+    modal_app.predict_and_submit.get_raw_f()(_test_event(), "evt_test_abc")
+    out = capsys.readouterr().out
+    assert "[SUBMIT] ok slot=1 event=test_abc source=test_neutral predictions=TEST=0.5000" in out
+
+
+def test_failed_submit_does_not_log_ok(monkeypatch, capsys) -> None:
+    _capture_submissions(monkeypatch)
+    import explaining_markets.client as client_mod
+
+    def broken(**kwargs):
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(client_mod, "submit_predictions", broken)
+    modal_app.predict_and_submit.get_raw_f()(_test_event(), "evt_test_abc")
+    out = capsys.readouterr().out
+    assert "[SUBMIT] ok" not in out
+    assert "[ERROR] slot=1 submission failed" in out
