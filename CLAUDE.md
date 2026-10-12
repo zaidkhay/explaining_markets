@@ -495,9 +495,9 @@ sign-inverted relationships from sparse, noisy data.
   ablation, alpha, and feature count. Paste the result into the promotion commit body.
 - Verify against the live gates: negative / neutral / positive disclosure cases, parser checks,
   PIT checks, full test suite.
-- Baseline: **226 passed** (`uv run pytest`, full suite, as of the repo-hygiene cleanup). A drop
-  in count without an explicit removal is a regression. Previously documented here as
-  **215 + 7 = 222**; this section had not been updated as tests were added since.
+- Baseline: **294 passed** (`uv run pytest`, full suite, as of 2026-10-11). A drop in count
+  without an explicit removal is a regression. Earlier baselines: 222, then 226 (repo-hygiene
+  cleanup), then 234 before the 2026-10-11 slot/always-submit/scorecard work.
 - The webhook has a hard time limit. Any change that adds provider calls to the live path is a
   latency risk. Measure before deploying.
 - **The system must always submit something.** A crash produces no submission. Failure paths
@@ -762,7 +762,7 @@ Before proposing any change, answer:
 - [ ] Is this landing on `main` — and if a branch is being created instead, what is the stated
       reason? → default is no branch (§11.1)
 - [ ] Is everything staged by explicit path, with `git diff --cached` read? → no `git add .`
-- [ ] Do the 226 tests still pass?
+- [ ] Does the full suite still pass at or above the §8.3 baseline?
 
 When uncertain, produce the analysis and the caveat. **Do not resolve ambiguity in the direction
 that makes a result look better.** The purpose of this document is to prevent a system that
