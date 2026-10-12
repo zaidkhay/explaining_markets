@@ -694,6 +694,7 @@ mkdir -p data/live_eval/evidence
 uv run modal volume get em-v3-data evidence data/live_eval/evidence
 
 # Evaluation
+uv run python scripts/live_scorecard.py --refresh-archive   # per-event scorecard + §9.2 alarms
 uv run python scripts/evaluate_recent_from_archive.py
 uv run python scripts/analyze_recent_live_results.py
 uv run python scripts/compare_v3_lite_official_score.py
