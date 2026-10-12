@@ -2533,7 +2533,8 @@
     0.004603905381806636,
     0.014446737577393237
   ],
-  "model_version": "v3_lite_operator_2026_08_19",
+  "model_version": "v3_lite_operator_2026_10_11_raw",
+  "submission": "raw_clipped",
   "operator_override": true,
   "production_candidate": true,
   "promoted": false,

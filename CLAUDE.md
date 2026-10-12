@@ -319,9 +319,11 @@ at the residual. If the feature is nearly spanned by surprise, it cannot help.
 
 ### 5.1 Current state
 
-Production applies `calibration_v1`: an empirical mid-rank CDF calibrator fit on out-of-sample
-2026Q1 validation predictions from a 2025Q4-trained model. Raw scores are clipped to
-`[0.05, 0.95]` before calibration.
+**Removed from the deployed path on 2026-10-12** (`v3_lite_operator_2026_10_11_raw`, artifact
+`submission: raw_clipped`): production now submits the raw score clipped to `[0.05, 0.95]`.
+Until then production applied `calibration_v1`: an empirical mid-rank CDF calibrator fit on
+out-of-sample 2026Q1 validation predictions from a 2025Q4-trained model. The calibrator is still
+loaded as the historical OOS reference distribution the live gate measures separation against.
 
 ### 5.2 The evidence against it
 
@@ -443,12 +445,13 @@ confirmed *after* those commits.
 ### 8.1 Current deployed state
 
 ```
-model version : v3_lite_operator_2026_08_19
+model version : v3_lite_operator_2026_10_11_raw
 ablation      : fls_plus_revenue
 model type    : constrained_ridge
 alpha         : 100.0
 features      : 39
-calibration   : calibration_v1
+submission    : raw_clipped (clipped raw score [0.05, 0.95]; no CDF transform)
+calibration   : calibration_v1 loaded as gate/diagnostic reference only, not applied
 promoted           : False
 operator_override  : True
 production_candidate : True

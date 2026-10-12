@@ -153,7 +153,7 @@ def check_production():
     from explaining_markets.model_v3_lite import V3LiteCandidateModel
     from explaining_markets.v3_lite_live_gate import evaluate_v3_lite_live_gate
 
-    expected_model = os.getenv("EXPECTED_V3_LITE_MODEL", "v3_lite_operator_2026_08_19")
+    expected_model = os.getenv("EXPECTED_V3_LITE_MODEL", "v3_lite_operator_2026_10_11_raw")
     model = get_default_model()
     if not isinstance(model, V3LiteCandidateModel):
         result = {
